@@ -13,7 +13,6 @@
 #else
 #define IMG_API __declspec(dllimport)
 #endif
-
 #ifndef IMG_PLATFORM_WINDOWS
 #define IMG_API
 #endif
@@ -58,18 +57,35 @@ typedef unsigned long long uint64;
 
 namespace img {
 
+    /**
+     * @struct specification
+     * @brief Holds metadata for an image.
+     *
+     * This struct contains information about an image, including its data,
+     * dimensions, number of channels, file extension, and file path.
+     */
     struct IMG_API specification {
-        uint8* data;
-        uint32 width;
-        uint32 height;
-        uint32 channels;
-        std::string extension;
-        std::filesystem::path path;
+        uint8* data;                    /**< Pointer to image data */
+        uint32 width;                   /**< Width of the image */
+        uint32 height;                  /**< Height of the image */
+        uint32 channels;                /**< Number of channels in the image */
+        std::string extension;          /**< File extension of the image */
+        std::filesystem::path path;     /**< File path of the image */
 
         specification() = default;
         ~specification() = default;
     };
 
+    /**
+     * @brief Reads an image from a file.
+     *
+     * This function reads an image from the specified file path and returns
+     * a shared pointer to a `specification` struct containing the image metadata.
+     *
+     * @param filePath The path to the image file.
+     * @param flip Whether to flip the image vertically.
+     * @return A shared pointer to a `specification` struct with the image metadata.
+     */
     IMG_API std::shared_ptr<specification> read(const std::filesystem::path& filePath, bool flip = false);
 }
 
