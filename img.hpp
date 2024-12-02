@@ -174,6 +174,7 @@ class img_bitreader{
 #define IMG_PNG_CHUNK_IHDR  0x52414449          ///< The IHDR chunk type.
 #define IMG_PNG_CHUNK_IEND  0x444E4549          ///< The IEND chunk type
 #define IMG_PNG_CHUNK_IDAT  0x54414449          ///< The IDAT chunk type
+#define IMG_PNG_CHUNK_PLTE  0x504C5445          ///< The PLTE chunk type
 
 /**
  * @brief Structure representing a PNG image chunk.
@@ -214,6 +215,7 @@ struct IMG_PNGCHUNK {
  * dimensions, color type, and compression settings.
  */
 struct IMG_PNGIHDR {
+    
     uint32 width{0};               ///< The width of the image in pixels.
     uint32 height{0};              ///< The height of the image in pixels.
     uint8 channels{0};             ///< The number of channels in the image.
@@ -240,13 +242,38 @@ struct IMG_PNGIHDR {
     ~IMG_PNGIHDR() = default;
 };
 
+/**
+ * @enum IMG_PNGCOLORTYPE
+ * @brief Enum representing the color types of PNG images.
+ *
+ * This enum represents the color types of PNG images. The possible values are
+ * as follows:
+ *
+ * - `GRAYSCALE`: A greyscale image with a single channel.
+ * 
+ * - `TRUECOLOR`: A full-color image with three channels.
+ * 
+ * - `INDEXED_COLOR`: An indexed image with a single channel.
+ * 
+ * - `GRAYSCALE_ALPHA`: A greyscale image with alpha channel.
+ * 
+ * - `TRUECOLOR_ALPHA`: A full-color image with alpha channel.
+ */
+enum class IMG_PNGCOLORTYPE {
+    GRAYSCALE           = 0,  ///< A greyscale image with a single channel.
+    TRUECOLOR           = 2,  ///< A full-color image with three channels.
+    INDEXED_COLOR       = 3,  ///< An indexed image with a single channel.
+    GRAYSCALE_ALPHA     = 4,  ///< A greyscale image with alpha channel.
+    TRUECOLOR_ALPHA     = 6   ///< A full-color image with alpha channel.
+};
+
 
 namespace img {
 
     /**
-     * @brief Represents an image specification.
+     * @brief Represents an image image_specification.
      *
-     * This struct represents an image specification. It contains the following
+     * This struct represents an image image_specification. It contains the following
      * fields:
      *
      * - `data`: A pointer to the image data.
@@ -261,10 +288,10 @@ namespace img {
      * 
      * - `path`: The file path of the image file.
      *
-     * The `specification` struct is used to store the results of reading an
+     * The `image_specification` struct is used to store the results of reading an
      * image from a file. It is returned by the `img::read` function.
      */
-    struct IMG_API specification {
+    struct IMG_API image_specification {
         /**
          * @brief A pointer to the image data.
          *
@@ -325,15 +352,15 @@ namespace img {
         /**
          * @brief Default constructor.
          */
-        specification() = default;
+        image_specification() = default;
 
         /**
          * @brief Destructor.
          *
-         * This is the destructor for the `specification` struct. It is not
+         * This is the destructor for the `image_specification` struct. It is not
          * virtual, since this struct is not intended to be inherited from.
          */
-        ~specification() = default;
+        ~image_specification() = default;
     };
 
 
@@ -341,14 +368,14 @@ namespace img {
      * @brief Reads an image from a file.
      *
      * This function attempts to read an image from the specified file path
-     * and returns a shared pointer to a `specification` struct containing
+     * and returns a shared pointer to a `image_specification` struct containing
      * the image's metadata.
      *
      * @param filePath The path to the image file.
      * @param flip A boolean indicating whether to flip the image vertically.
      *             Defaults to false.
-     * @return A shared pointer to a `specification` struct with the image
+     * @return A shared pointer to a `image_specification` struct with the image
      *         metadata, or nullptr if the file could not be read.
      */
-    IMG_API std::shared_ptr<specification> read(const std::filesystem::path& filePath, bool flip = false);
+    IMG_API std::shared_ptr<image_specification> read(const std::filesystem::path& filePath, bool flip = false);
 }

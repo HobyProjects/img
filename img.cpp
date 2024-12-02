@@ -31,7 +31,7 @@
 #include "img.hpp"
 
 namespace img{
-    std::shared_ptr<specification> read(const std::filesystem::path & filePath, bool flip){
+    std::shared_ptr<image_specification> read(const std::filesystem::path & filePath, bool flip){
         if(!std::filesystem::exists(filePath)){
             IMG_ASSERT(false, "File does not exist: ", filePath.string().c_str());
             IMG_LOG("File does not exist: %s", filePath.string().c_str());
@@ -53,7 +53,7 @@ namespace img{
         file.read((char*)data, fileSize);
         file.close();
 
-        std::shared_ptr<specification> img_spec = std::make_shared<specification>();
+        std::shared_ptr<image_specification> img_spec = std::make_shared<image_specification>();
         img_bitreader redr(data, fileSize);
         uint64 img_signature = redr.read_bits<uint64>();
         
