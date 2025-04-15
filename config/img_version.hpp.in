@@ -1,0 +1,5 @@
+#pragma once
+
+inline constexpr int IMG_VERSION_MAJOR = @IMG_VERSION_MAJOR@;
+inline constexpr int IMG_VERSION_MINOR = @IMG_VERSION_MINOR@;
+inline constexpr int IMG_VERSION_PATCH = @IMG_VERSION_PATCH@;
