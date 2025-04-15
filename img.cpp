@@ -175,55 +175,37 @@ struct img_rgb {
   ~img_rgb() = default;  // Default destructor
 };
 
-/**
- * @struct img_rgba
- * @brief This structure represents an RGBA color.
- * It contains the red, green, blue, and alpha channel values.
- */
-struct img_rgba {
-  uint8_t r{0};  // Red channel value
-  uint8_t g{0};  // Green channel value
-  uint8_t b{0};  // Blue channel value
-  uint8_t a{0};  // Alpha channel value
-
-  img_rgba() = default;  // Default constructor
-  img_rgba(uint8_t red, uint8_t green, uint8_t blue, uint8_t alpha)
-      : r(red), g(green), b(blue), a(alpha) {}
-  ~img_rgba() = default;  // Default destructor
-};
-
 /******************************************************************
  *                         PNG IMAGE FILES                        *
  * ****************************************************************/
-static constexpr uint64_t s_IMG_PNG_SIGNATURE =
-    0x89504E470D0A1A0A;  // PNG file signature
+static constexpr uint64_t s_IMG_PNG_SIGNATURE = 0x89504E470D0A1A0A;  // PNG file signature
 static constexpr uint32_t s_IMG_PNG_IHDR_CHUNK = 0x52414449;  // IHDR chunk type
 static constexpr uint32_t s_IMG_PNG_IEND_CHUNK = 0x444E4549;  // IEND chunk type
 static constexpr uint32_t s_IMG_PNG_IDAT_CHUNK = 0x54455849;  // IDAT chunk type
 static constexpr uint32_t s_IMG_PNG_PLTE_CHUNK = 0x54494C50;  // PLTE chunk type
-static constexpr uint32_t s_IMG_PNG_tRNS_CHUNK = 0x74524E53;  // tRNS chunk type
-static constexpr uint32_t s_IMG_PNG_gAMA_CHUNK = 0x67414D41;  // gAMA chunk type
-static constexpr uint32_t s_IMG_PNG_cHRM_CHUNK = 0x6348524D;  // cHRM chunk type
-static constexpr uint32_t s_IMG_PNG_sRGB_CHUNK = 0x73524742;  // sRGB chunk type
-static constexpr uint32_t s_IMG_PNG_bKGD_CHUNK = 0x624B4744;  // bKGD chunk type
-static constexpr uint32_t s_IMG_PNG_pHYs_CHUNK = 0x70485973;  // pHYs chunk type
-static constexpr uint32_t s_IMG_PNG_iTXt_CHUNK = 0x69545874;  // iTXt chunk type
-static constexpr uint32_t s_IMG_PNG_tEXt_CHUNK = 0x74455874;  // tEXt chunk type
-static constexpr uint32_t s_IMG_PNG_zTXt_CHUNK = 0x7A545874;  // zTXt chunk type
-static constexpr uint32_t s_IMG_PNG_sBIT_CHUNK = 0x73424954;  // sBIT chunk type
-static constexpr uint32_t s_IMG_PNG_iCCP_CHUNK = 0x69434350;  // iCCP chunk type
-static constexpr uint32_t s_IMG_PNG_fRAc_CHUNK = 0x66726163;  // fRAc chunk type
-static constexpr uint32_t s_IMG_PNG_hIST_CHUNK = 0x68495354;  // hIST chunk type
-static constexpr uint32_t s_IMG_PNG_tIME_CHUNK = 0x74494D45;  // tIME chunk type
-static constexpr uint32_t s_IMG_PNG_pCAL_CHUNK = 0x7043414C;  // pCAL chunk type
-static constexpr uint32_t s_IMG_PNG_sCAL_CHUNK = 0x7343414C;  // sCAL chunk type
+static constexpr uint32_t s_IMG_PNG_TRNS_CHUNK = 0x74524E53;  // tRNS chunk type
+static constexpr uint32_t s_IMG_PNG_GAMA_CHUNK = 0x67414D41;  // gAMA chunk type
+static constexpr uint32_t s_IMG_PNG_CHRM_CHUNK = 0x6348524D;  // cHRM chunk type
+static constexpr uint32_t s_IMG_PNG_SRGB_CHUNK = 0x73524742;  // sRGB chunk type
+static constexpr uint32_t s_IMG_PNG_BKGD_CHUNK = 0x624B4744;  // bKGD chunk type
+static constexpr uint32_t s_IMG_PNG_PHYS_CHUNK = 0x70485973;  // pHYs chunk type
+static constexpr uint32_t s_IMG_PNG_ITXT_CHUNK = 0x69545874;  // iTXt chunk type
+static constexpr uint32_t s_IMG_PNG_TEXT_CHUNK = 0x74455874;  // tEXt chunk type
+static constexpr uint32_t s_IMG_PNG_ZTXT_CHUNK = 0x7A545874;  // zTXt chunk type
+static constexpr uint32_t s_IMG_PNG_SBIT_CHUNK = 0x73424954;  // sBIT chunk type
+static constexpr uint32_t s_IMG_PNG_ICCP_CHUNK = 0x69434350;  // iCCP chunk type
+static constexpr uint32_t s_IMG_PNG_FRAC_CHUNK = 0x66726163;  // fRAc chunk type
+static constexpr uint32_t s_IMG_PNG_HIST_CHUNK = 0x68495354;  // hIST chunk type
+static constexpr uint32_t s_IMG_PNG_TIME_CHUNK = 0x74494D45;  // tIME chunk type
+static constexpr uint32_t s_IMG_PNG_PCAL_CHUNK = 0x7043414C;  // pCAL chunk type
+static constexpr uint32_t s_IMG_PNG_SCAL_CHUNK = 0x7343414C;  // sCAL chunk type
 
 static constexpr uint32_t s_CRC32_POLYNOMIAL = 0xEDB88320;  // CRC32 polynomial
 static constexpr uint32_t s_CRC_TABLE_SIZE = 256;  // Size of the CRC table
 
-static uint32_t s_crc_table[s_CRC_TABLE_SIZE];  // CRC table
+static uint32_t s_CRC_TABLE[s_CRC_TABLE_SIZE];  // CRC table
 static std::once_flag
-    s_crc_table_init_flag;  // Flag to ensure CRC table is initialized only once
+    s_CRC_TBL_INIT_FLAG;  // Flag to ensure CRC table is initialized only once
 
 /**
  * @brief Generates the CRC table for CRC32 calculation.
@@ -240,7 +222,7 @@ static void img_png_generate_crc_table() noexcept {
         crc >>= 1;
       }
     }
-    s_crc_table[i] = crc;
+    s_CRC_TABLE[i] = crc;
   }
 }
 
@@ -257,7 +239,7 @@ static uint32_t img_png_crc32(const uint8_t* data, size_t length) noexcept {
   for (size_t i = 0; i < length; ++i) {
     uint8_t byte = data[i];
     crc = (crc >> 8) ^
-          s_crc_table[(crc ^ byte) & 0xFF];  // Update CRC value using the table
+          s_CRC_TABLE[(crc ^ byte) & 0xFF];  // Update CRC value using the table
   }
   return ~crc;  // Return the final CRC value
 }
@@ -350,57 +332,57 @@ struct img_png_plte_chunk : img_png_chunk {
 };
 
 /**
- * @struct img_png_tRNS_chunk
+ * @struct img_png_trns_chunk
  * @brief This structure represents the tRNS chunk of a PNG image.
  * It contains a vector of alpha values and the length of the tRNS chunk data.
  */
-struct img_png_tRNS_chunk : img_png_chunk {
+struct img_png_trns_chunk : img_png_chunk {
   std::vector<uint8_t> alpha;  // Vector to hold the alpha values
 
-  img_png_tRNS_chunk() = default;
-  virtual ~img_png_tRNS_chunk() = default;
+  img_png_trns_chunk() = default;
+  virtual ~img_png_trns_chunk() = default;
 };
 
-struct img_png_gAMA_chunk;  // Forward declaration of img_png_gAMA_chunk
-struct img_png_cHRM_chunk;  // Forward declaration of img_png_cHRM_chunk
+struct img_png_gama_chunk;  // Forward declaration of img_png_gama_chunk
+struct img_png_chrm_chunk;  // Forward declaration of img_png_chrm_chunk
 struct img_png_iCCP_chunk;  // Forward declaration of img_png_iCCP_chunk
 struct img_png_sRGB_chunk;  // Forward declaration of img_png_sRGB_chunk
 
 /**
- * @struct img_png_gAMA_chunk
+ * @struct img_png_gama_chunk
  * @brief This structure represents the gAMA chunk of a PNG image.
  * It contains the gamma value for the image.
  */
-struct img_png_gAMA_chunk : img_png_chunk {
+struct img_png_gama_chunk : img_png_chunk {
   uint32_t gamma{0};      // Gamma value for the image
   bool has_gamma{false};  // Flag to indicate if gAMA chunk is present
 
-  img_png_cHRM_chunk* cHRM{nullptr};  // Pointer to the cHRM chunk (if present)
+  img_png_chrm_chunk* cHRM{nullptr};  // Pointer to the cHRM chunk (if present)
   img_png_iCCP_chunk* iCCP{nullptr};  // Pointer to the iCCP chunk (if present)
   img_png_sRGB_chunk* sRGB{nullptr};  // Pointer to the sRGB chunk (if present)
 
-  img_png_gAMA_chunk() = default;
-  virtual ~img_png_gAMA_chunk() = default;
+  img_png_gama_chunk() = default;
+  virtual ~img_png_gama_chunk() = default;
 };
 
 /**
- * @struct img_png_cHRM_chunk
+ * @struct img_png_chrm_chunk
  * @brief This structure represents the cHRM chunk of a PNG image.
  * It contains the chromaticity values for the image.
  */
-struct img_png_cHRM_chunk : img_png_chunk {
+struct img_png_chrm_chunk : img_png_chunk {
   float white_x{0.0f}, white_y{0.0f};
   float red_x{0.0f}, red_y{0.0f};
   float green_x{0.0f}, green_y{0.0f};
   float blue_x{0.0f}, blue_y{0.0f};
   bool has_chrm{false};
 
-  img_png_gAMA_chunk* gAMA{nullptr};  // Pointer to the gAMA chunk (if present)
+  img_png_gama_chunk* gAMA{nullptr};  // Pointer to the gAMA chunk (if present)
   img_png_iCCP_chunk* iCCP{nullptr};  // Pointer to the iCCP chunk (if present)
   img_png_sRGB_chunk* sRGB{nullptr};  // Pointer to the sRGB chunk (if present)
 
-  img_png_cHRM_chunk() = default;
-  virtual ~img_png_cHRM_chunk() = default;
+  img_png_chrm_chunk() = default;
+  virtual ~img_png_chrm_chunk() = default;
 };
 
 /**
@@ -423,14 +405,14 @@ static bool img_png_read(const std::shared_ptr<img::image_specification>& spec,
     return false;
   }
 
-  std::call_once(s_crc_table_init_flag,
+  std::call_once(s_CRC_TBL_INIT_FLAG,
                  img_png_generate_crc_table);  // Generate the CRC table
   std::vector<std::shared_ptr<img_png_type_chunk_map>>
       png_chunks;  // Vector to hold PNG chunks
 
   img_png_ihdr_chunck* temp_ihdr_ptr = nullptr;  // Pointer to IHDR chunk
-  img_png_gAMA_chunk* temp_gamma_ptr = nullptr;  // Pointer to gAMA chunk
-  img_png_cHRM_chunk* temp_chrm_ptr = nullptr;   // Pointer to cHRM chunk
+  img_png_gama_chunk* temp_gamma_ptr = nullptr;  // Pointer to gAMA chunk
+  img_png_chrm_chunk* temp_chrm_ptr = nullptr;   // Pointer to cHRM chunk
   img_png_iCCP_chunk* temp_iccp_ptr = nullptr;   // Pointer to iCCP chunk
   img_png_sRGB_chunk* temp_srgb_ptr = nullptr;   // Pointer to sRGB chunk
 
@@ -532,9 +514,9 @@ static bool img_png_read(const std::shared_ptr<img::image_specification>& spec,
       png_chunks.emplace_back(std::move(plte_map));
     }
 
-    if (chunk.type == s_IMG_PNG_tRNS_CHUNK) {
-      std::unique_ptr<img_png_tRNS_chunk> tRNS =
-          std::make_unique<img_png_tRNS_chunk>();
+    if (chunk.type == s_IMG_PNG_TRNS_CHUNK) {
+      std::unique_ptr<img_png_trns_chunk> tRNS =
+          std::make_unique<img_png_trns_chunk>();
       tRNS->alpha.reserve(chunk.length);
       for (uint32_t i = 0; i < chunk.length; ++i) {
         tRNS->alpha.emplace_back(chunk_data[i]);
@@ -549,9 +531,9 @@ static bool img_png_read(const std::shared_ptr<img::image_specification>& spec,
       png_chunks.emplace_back(std::move(tRNS_map));
     }
 
-    if (chunk.type == s_IMG_PNG_gAMA_CHUNK) {
-      std::unique_ptr<img_png_gAMA_chunk> gAMA =
-          std::make_unique<img_png_gAMA_chunk>();
+    if (chunk.type == s_IMG_PNG_GAMA_CHUNK) {
+      std::unique_ptr<img_png_gama_chunk> gAMA =
+          std::make_unique<img_png_gama_chunk>();
       temp_gamma_ptr = gAMA.get();  // Store the pointer to gAMA chunk
 
       if (chunk.length != 4) {
@@ -573,9 +555,9 @@ static bool img_png_read(const std::shared_ptr<img::image_specification>& spec,
       }
     }
 
-    if (chunk.type == s_IMG_PNG_cHRM_CHUNK) {
-      std::unique_ptr<img_png_cHRM_chunk> cHRM =
-          std::make_unique<img_png_cHRM_chunk>();
+    if (chunk.type == s_IMG_PNG_CHRM_CHUNK) {
+      std::unique_ptr<img_png_chrm_chunk> cHRM =
+          std::make_unique<img_png_chrm_chunk>();
       temp_chrm_ptr = cHRM.get();  // Store the pointer to cHRM chunk
 
       if (chunk.length != 32) {
