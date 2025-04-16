@@ -73,7 +73,6 @@ enum class image_format {
  * true).
  * @return A std::shared_ptr to the loaded image.
  */
-[[nodiscard]] std::shared_ptr<image_specification> import(
-    const std::filesystem::path& filepath, image_format format,
-    bool flip = true) noexcept;
+[[nodiscard]] std::shared_ptr<image_specification>
+import(const std::filesystem::path& filepath, image_format format, bool flip = true) noexcept;
 }  // namespace img

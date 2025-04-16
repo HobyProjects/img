@@ -10,6 +10,8 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_C_STANDARD 17)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+set(CMAKE_CXX_COMPILER clang++)
 
 ##############################################################################
 # Version Configuration
@@ -84,4 +86,3 @@ endif()
 ###############################################################################
 add_library(${PROJECT_NAME} STATIC img.hpp img.cpp)
 target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} ${IMG_VERSION_OUT_DIR})
-target_precompile_headers(${PROJECT_NAME} PUBLIC img_pch.hpp)

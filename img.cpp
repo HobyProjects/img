@@ -22,7 +22,17 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-#include "img_pch.hpp"
+#include "img.hpp"
+
+#include <cstdint>
+#include <filesystem>
+#include <fstream>
+#include <iostream>
+#include <memory>
+#include <string>
+#include <type_traits>
+#include <unordered_map>
+#include <vector>
 
 /**
  * @class bit_reader
@@ -34,8 +44,7 @@ SOFTWARE.
  */
 class bit_reader {
  public:
-  explicit bit_reader(uint8_t* data, size_t size)
-      : m_data(data), m_size(size), m_bit_offset(0) {}
+  explicit bit_reader(uint8_t* data, size_t size) : m_data(data), m_size(size), m_bit_offset(0) {}
   bit_reader(const bit_reader&) = delete;
   bit_reader& operator=(const bit_reader&) = delete;
   bit_reader(bit_reader&&) = default;
@@ -109,7 +118,7 @@ struct compressed_file_data {
   std::filesystem::path filepath;  ///< Filepath of the compressed file
   std::string filename;            ///< Filename of the compressed file
   uint8_t* data{nullptr};          ///< Pointer to the compressed file data
-  size_t size{0};  ///< Size of the compressed file data in bytes
+  size_t size{0};                  ///< Size of the compressed file data in bytes
 
   explicit compressed_file_data(const std::filesystem::path& file) {
     filepath = file;
@@ -119,23 +128,20 @@ struct compressed_file_data {
       IMG_DEBUG_LOG("Failed to open file: %s\n", filepath.string().c_str());
       throw std::runtime_error("Failed to open file: " + filepath.string());
     }
-    size = file_stream.tellg();  // Get the size of the file
-    file_stream.seekg(
-        0, std::ios::beg);     // Move the cursor to the beginning of the file
-    data = new uint8_t[size];  // Allocate memory for the file data
+    size = file_stream.tellg();           // Get the size of the file
+    file_stream.seekg(0, std::ios::beg);  // Move the cursor to the beginning of the file
+    data = new uint8_t[size];             // Allocate memory for the file data
     file_stream.read(reinterpret_cast<char*>(data),
                      size);  // Read the file data into the buffer
     file_stream.close();     // Close the file stream
   };
 
-  compressed_file_data(const compressed_file_data&) =
-      delete;  // Delete copy constructor
-  compressed_file_data& operator=(const compressed_file_data&) =
-      delete;  // Delete copy assignment operator
-  compressed_file_data(compressed_file_data&&) =
-      default;  // Default move constructor
-  compressed_file_data& operator=(compressed_file_data&&) =
-      default;  // Default move assignment operator
+  compressed_file_data(const compressed_file_data&) = delete;  // Delete copy constructor
+  compressed_file_data&
+  operator=(const compressed_file_data&) = delete;         // Delete copy assignment operator
+  compressed_file_data(compressed_file_data&&) = default;  // Default move constructor
+  compressed_file_data&
+  operator=(compressed_file_data&&) = default;  // Default move assignment operator
 
   ~compressed_file_data() {
     delete[] data;  // Free the allocated memory for the file data
@@ -170,8 +176,7 @@ struct img_rgb {
   uint8_t b{0};  // Blue channel value
 
   img_rgb() = default;  // Default constructor
-  img_rgb(uint8_t red, uint8_t green, uint8_t blue)
-      : r(red), g(green), b(blue) {}
+  img_rgb(uint8_t red, uint8_t green, uint8_t blue) : r(red), g(green), b(blue) {}
   ~img_rgb() = default;  // Default destructor
 };
 
@@ -179,33 +184,32 @@ struct img_rgb {
  *                         PNG IMAGE FILES                        *
  * ****************************************************************/
 static constexpr uint64_t s_IMG_PNG_SIGNATURE = 0x89504E470D0A1A0A;  // PNG file signature
-static constexpr uint32_t s_IMG_PNG_IHDR_CHUNK = 0x52414449;  // IHDR chunk type
-static constexpr uint32_t s_IMG_PNG_IEND_CHUNK = 0x444E4549;  // IEND chunk type
-static constexpr uint32_t s_IMG_PNG_IDAT_CHUNK = 0x54455849;  // IDAT chunk type
-static constexpr uint32_t s_IMG_PNG_PLTE_CHUNK = 0x54494C50;  // PLTE chunk type
-static constexpr uint32_t s_IMG_PNG_TRNS_CHUNK = 0x74524E53;  // tRNS chunk type
-static constexpr uint32_t s_IMG_PNG_GAMA_CHUNK = 0x67414D41;  // gAMA chunk type
-static constexpr uint32_t s_IMG_PNG_CHRM_CHUNK = 0x6348524D;  // cHRM chunk type
-static constexpr uint32_t s_IMG_PNG_SRGB_CHUNK = 0x73524742;  // sRGB chunk type
-static constexpr uint32_t s_IMG_PNG_BKGD_CHUNK = 0x624B4744;  // bKGD chunk type
-static constexpr uint32_t s_IMG_PNG_PHYS_CHUNK = 0x70485973;  // pHYs chunk type
-static constexpr uint32_t s_IMG_PNG_ITXT_CHUNK = 0x69545874;  // iTXt chunk type
-static constexpr uint32_t s_IMG_PNG_TEXT_CHUNK = 0x74455874;  // tEXt chunk type
-static constexpr uint32_t s_IMG_PNG_ZTXT_CHUNK = 0x7A545874;  // zTXt chunk type
-static constexpr uint32_t s_IMG_PNG_SBIT_CHUNK = 0x73424954;  // sBIT chunk type
-static constexpr uint32_t s_IMG_PNG_ICCP_CHUNK = 0x69434350;  // iCCP chunk type
-static constexpr uint32_t s_IMG_PNG_FRAC_CHUNK = 0x66726163;  // fRAc chunk type
-static constexpr uint32_t s_IMG_PNG_HIST_CHUNK = 0x68495354;  // hIST chunk type
-static constexpr uint32_t s_IMG_PNG_TIME_CHUNK = 0x74494D45;  // tIME chunk type
-static constexpr uint32_t s_IMG_PNG_PCAL_CHUNK = 0x7043414C;  // pCAL chunk type
-static constexpr uint32_t s_IMG_PNG_SCAL_CHUNK = 0x7343414C;  // sCAL chunk type
+static constexpr uint32_t s_IMG_PNG_IHDR_CHUNK = 0x52414449;         // IHDR chunk type
+static constexpr uint32_t s_IMG_PNG_IEND_CHUNK = 0x444E4549;         // IEND chunk type
+static constexpr uint32_t s_IMG_PNG_IDAT_CHUNK = 0x54455849;         // IDAT chunk type
+static constexpr uint32_t s_IMG_PNG_PLTE_CHUNK = 0x54494C50;         // PLTE chunk type
+static constexpr uint32_t s_IMG_PNG_TRNS_CHUNK = 0x74524E53;         // tRNS chunk type
+static constexpr uint32_t s_IMG_PNG_GAMA_CHUNK = 0x67414D41;         // gAMA chunk type
+static constexpr uint32_t s_IMG_PNG_CHRM_CHUNK = 0x6348524D;         // cHRM chunk type
+static constexpr uint32_t s_IMG_PNG_SRGB_CHUNK = 0x73524742;         // sRGB chunk type
+static constexpr uint32_t s_IMG_PNG_BKGD_CHUNK = 0x624B4744;         // bKGD chunk type
+static constexpr uint32_t s_IMG_PNG_PHYS_CHUNK = 0x70485973;         // pHYs chunk type
+static constexpr uint32_t s_IMG_PNG_ITXT_CHUNK = 0x69545874;         // iTXt chunk type
+static constexpr uint32_t s_IMG_PNG_TEXT_CHUNK = 0x74455874;         // tEXt chunk type
+static constexpr uint32_t s_IMG_PNG_ZTXT_CHUNK = 0x7A545874;         // zTXt chunk type
+static constexpr uint32_t s_IMG_PNG_SBIT_CHUNK = 0x73424954;         // sBIT chunk type
+static constexpr uint32_t s_IMG_PNG_ICCP_CHUNK = 0x69434350;         // iCCP chunk type
+static constexpr uint32_t s_IMG_PNG_FRAC_CHUNK = 0x66726163;         // fRAc chunk type
+static constexpr uint32_t s_IMG_PNG_HIST_CHUNK = 0x68495354;         // hIST chunk type
+static constexpr uint32_t s_IMG_PNG_TIME_CHUNK = 0x74494D45;         // tIME chunk type
+static constexpr uint32_t s_IMG_PNG_PCAL_CHUNK = 0x7043414C;         // pCAL chunk type
+static constexpr uint32_t s_IMG_PNG_SCAL_CHUNK = 0x7343414C;         // sCAL chunk type
 
 static constexpr uint32_t s_CRC32_POLYNOMIAL = 0xEDB88320;  // CRC32 polynomial
-static constexpr uint32_t s_CRC_TABLE_SIZE = 256;  // Size of the CRC table
+static constexpr uint32_t s_CRC_TABLE_SIZE = 256;           // Size of the CRC table
 
 static uint32_t s_CRC_TABLE[s_CRC_TABLE_SIZE];  // CRC table
-static std::once_flag
-    s_CRC_TBL_INIT_FLAG;  // Flag to ensure CRC table is initialized only once
+static std::once_flag s_CRC_TBL_INIT_FLAG;      // Flag to ensure CRC table is initialized only once
 
 /**
  * @brief Generates the CRC table for CRC32 calculation.
@@ -238,8 +242,7 @@ static uint32_t img_png_crc32(const uint8_t* data, size_t length) noexcept {
   uint32_t crc = 0xFFFFFFFF;  // Initial CRC value
   for (size_t i = 0; i < length; ++i) {
     uint8_t byte = data[i];
-    crc = (crc >> 8) ^
-          s_CRC_TABLE[(crc ^ byte) & 0xFF];  // Update CRC value using the table
+    crc = (crc >> 8) ^ s_CRC_TABLE[(crc ^ byte) & 0xFF];  // Update CRC value using the table
   }
   return ~crc;  // Return the final CRC value
 }
@@ -345,8 +348,8 @@ struct img_png_trns_chunk : img_png_chunk {
 
 struct img_png_gama_chunk;  // Forward declaration of img_png_gama_chunk
 struct img_png_chrm_chunk;  // Forward declaration of img_png_chrm_chunk
-struct img_png_iCCP_chunk;  // Forward declaration of img_png_iCCP_chunk
-struct img_png_sRGB_chunk;  // Forward declaration of img_png_sRGB_chunk
+struct img_png_iccp_chunk;  // Forward declaration of img_png_iccp_chunk
+struct img_png_srgb_chunk;  // Forward declaration of img_png_srgb_chunk
 
 /**
  * @struct img_png_gama_chunk
@@ -358,8 +361,8 @@ struct img_png_gama_chunk : img_png_chunk {
   bool has_gamma{false};  // Flag to indicate if gAMA chunk is present
 
   img_png_chrm_chunk* cHRM{nullptr};  // Pointer to the cHRM chunk (if present)
-  img_png_iCCP_chunk* iCCP{nullptr};  // Pointer to the iCCP chunk (if present)
-  img_png_sRGB_chunk* sRGB{nullptr};  // Pointer to the sRGB chunk (if present)
+  img_png_iccp_chunk* iCCP{nullptr};  // Pointer to the iCCP chunk (if present)
+  img_png_srgb_chunk* sRGB{nullptr};  // Pointer to the sRGB chunk (if present)
 
   img_png_gama_chunk() = default;
   virtual ~img_png_gama_chunk() = default;
@@ -378,11 +381,62 @@ struct img_png_chrm_chunk : img_png_chunk {
   bool has_chrm{false};
 
   img_png_gama_chunk* gAMA{nullptr};  // Pointer to the gAMA chunk (if present)
-  img_png_iCCP_chunk* iCCP{nullptr};  // Pointer to the iCCP chunk (if present)
-  img_png_sRGB_chunk* sRGB{nullptr};  // Pointer to the sRGB chunk (if present)
+  img_png_iccp_chunk* iCCP{nullptr};  // Pointer to the iCCP chunk (if present)
+  img_png_srgb_chunk* sRGB{nullptr};  // Pointer to the sRGB chunk (if present)
 
   img_png_chrm_chunk() = default;
   virtual ~img_png_chrm_chunk() = default;
+};
+
+/**
+ * @struct img_png_iccp_chunk
+ * @brief This structure represents the iCCP chunk of a PNG image.
+ * It contains the ICC profile data for the image.
+ */
+struct img_png_iccp_chunk : img_png_chunk {
+  uint32_t profile_length{0};      // Length of the ICC profile data
+  uint8_t* profile_data{nullptr};  // Pointer to the ICC profile data
+  uint32_t compression_method{0};  // Compression method
+  uint32_t compression_level{0};   // Compression level
+  bool has_iccp{false};
+
+  img_png_gama_chunk* gAMA{nullptr};  // Pointer to the gAMA chunk (if present)
+  img_png_chrm_chunk* cHRM{nullptr};  // Pointer to the cHRM chunk (if present)
+  img_png_srgb_chunk* sRGB{nullptr};  // Pointer to the sRGB chunk (if present)
+
+  img_png_iccp_chunk() = default;
+  virtual ~img_png_iccp_chunk() {
+    delete[] profile_data;  // Free the ICC profile data
+  }
+};
+
+/**
+ * @enum img_png_srgb_rendering_intent
+ * @brief This enum represents the rendering intent for the sRGB chunk of a PNG
+ * image.
+ */
+enum class img_png_srgb_rendering_intent : uint8_t {
+  perceptual = 0,
+  relative_colorimetic = 1,
+  saturation = 2,
+  absolute_colorimetric = 3
+};
+
+/**
+ * @struct img_png_srgb_chunk
+ * @brief This structure represents the sRGB chunk of a PNG image.
+ * It contains the rendering intent for the image.
+ */
+struct img_png_srgb_chunk : img_png_chunk {
+  img_png_srgb_rendering_intent rendering_intent{img_png_srgb_rendering_intent::perceptual};
+  bool has_srgb{false};
+
+  img_png_gama_chunk* gAMA{nullptr};  // Pointer to the gAMA chunk (if present)
+  img_png_iccp_chunk* iCCP{nullptr};  // Pointer to the iCCP chunk (if present)
+  img_png_chrm_chunk* cHRM{nullptr};  // Pointer to the cHRM chunk (if present)
+
+  img_png_srgb_chunk() = default;
+  virtual ~img_png_srgb_chunk() = default;
 };
 
 /**
@@ -395,26 +449,25 @@ struct img_png_chrm_chunk : img_png_chunk {
  * @param size Size of the PNG file data in bytes.
  * @return True if the PNG file was read successfully, false otherwise.
  */
-static bool img_png_read(const std::shared_ptr<img::image_specification>& spec,
-                         uint8_t* data, size_t size) noexcept {
+static bool img_png_read(const std::shared_ptr<img::image_specification>& spec, uint8_t* data,
+                         size_t size) noexcept {
   bit_reader bit(data, size);                 // Create a bit bit for the data
   uint64_t signature = bit.read<uint64_t>();  // Read the PNG signature
   if (signature != s_IMG_PNG_SIGNATURE) {
-    IMG_DEBUG_LOG("Invalid PNG signature: %llx, File:%s is not a PNG file\n",
-                  signature, spec->filename.c_str());
+    IMG_DEBUG_LOG("Invalid PNG signature: %llx, File:%s is not a PNG file\n", signature,
+                  spec->filename.c_str());
     return false;
   }
 
   std::call_once(s_CRC_TBL_INIT_FLAG,
-                 img_png_generate_crc_table);  // Generate the CRC table
-  std::vector<std::shared_ptr<img_png_type_chunk_map>>
-      png_chunks;  // Vector to hold PNG chunks
+                 img_png_generate_crc_table);                       // Generate the CRC table
+  std::vector<std::shared_ptr<img_png_type_chunk_map>> png_chunks;  // Vector to hold PNG chunks
 
   img_png_ihdr_chunck* temp_ihdr_ptr = nullptr;  // Pointer to IHDR chunk
   img_png_gama_chunk* temp_gamma_ptr = nullptr;  // Pointer to gAMA chunk
   img_png_chrm_chunk* temp_chrm_ptr = nullptr;   // Pointer to cHRM chunk
-  img_png_iCCP_chunk* temp_iccp_ptr = nullptr;   // Pointer to iCCP chunk
-  img_png_sRGB_chunk* temp_srgb_ptr = nullptr;   // Pointer to sRGB chunk
+  img_png_iccp_chunk* temp_iccp_ptr = nullptr;   // Pointer to iCCP chunk
+  img_png_srgb_chunk* temp_srgb_ptr = nullptr;   // Pointer to sRGB chunk
 
   while (true) {
     img_png_chunk chunk;
@@ -422,8 +475,7 @@ static bool img_png_read(const std::shared_ptr<img::image_specification>& spec,
     chunk.type = bit.read<uint32_t>();
 
     if (chunk.length == 0) {
-      IMG_DEBUG_LOG("Invalid chunk, length: %x, Possible corruption\n",
-                    chunk.length);
+      IMG_DEBUG_LOG("Invalid chunk, length: %x, Possible corruption\n", chunk.length);
       return false;
     }
 
@@ -449,21 +501,19 @@ static bool img_png_read(const std::shared_ptr<img::image_specification>& spec,
     delete[] crc_input;
 
     if (crc != chunk.crc) {
-      IMG_DEBUG_LOG("Invalid CRC for chunk type: %x, expected: %x\n",
-                    chunk.type, crc);
+      IMG_DEBUG_LOG("Invalid CRC for chunk type: %x, expected: %x\n", chunk.type, crc);
       delete[] chunk_data;  // Free the chunk data
       return false;
     }
 
     if (chunk.type == s_IMG_PNG_IHDR_CHUNK) {
-      std::unique_ptr<img_png_ihdr_chunck> ihdr =
-          std::make_unique<img_png_ihdr_chunck>();
+      std::unique_ptr<img_png_ihdr_chunck> ihdr = std::make_unique<img_png_ihdr_chunck>();
       temp_ihdr_ptr = ihdr.get();
 
-      ihdr->width = (chunk_data[0] << 24) | (chunk_data[1] << 16) |
-                    (chunk_data[2] << 8) | chunk_data[3];
-      ihdr->height = (chunk_data[4] << 24) | (chunk_data[5] << 16) |
-                     (chunk_data[6] << 8) | chunk_data[7];
+      ihdr->width =
+          (chunk_data[0] << 24) | (chunk_data[1] << 16) | (chunk_data[2] << 8) | chunk_data[3];
+      ihdr->height =
+          (chunk_data[4] << 24) | (chunk_data[5] << 16) | (chunk_data[6] << 8) | chunk_data[7];
       ihdr->bit_depth = chunk_data[8];
       ihdr->color_type = chunk_data[9];
       ihdr->compression_method = chunk_data[10];
@@ -480,8 +530,7 @@ static bool img_png_read(const std::shared_ptr<img::image_specification>& spec,
     }
 
     if (chunk.type == s_IMG_PNG_IDAT_CHUNK) {
-      std::unique_ptr<img_png_idat_chunk> idat =
-          std::make_unique<img_png_idat_chunk>();
+      std::unique_ptr<img_png_idat_chunk> idat = std::make_unique<img_png_idat_chunk>();
       idat->ihdr_ptr = temp_ihdr_ptr;
 
       idat->length = chunk.length;
@@ -497,12 +546,10 @@ static bool img_png_read(const std::shared_ptr<img::image_specification>& spec,
     }
 
     if (chunk.type == s_IMG_PNG_PLTE_CHUNK) {
-      std::unique_ptr<img_png_plte_chunk> plte =
-          std::make_unique<img_png_plte_chunk>();
+      std::unique_ptr<img_png_plte_chunk> plte = std::make_unique<img_png_plte_chunk>();
       plte->palette.reserve(chunk.length / 3);
       for (uint32_t i = 0; i < chunk.length; i += 3) {
-        plte->palette.emplace_back(
-            img_rgb(chunk_data[i], chunk_data[i + 1], chunk_data[i + 2]));
+        plte->palette.emplace_back(img_rgb(chunk_data[i], chunk_data[i + 1], chunk_data[i + 2]));
       }
 
       plte->length = chunk.length;
@@ -515,8 +562,7 @@ static bool img_png_read(const std::shared_ptr<img::image_specification>& spec,
     }
 
     if (chunk.type == s_IMG_PNG_TRNS_CHUNK) {
-      std::unique_ptr<img_png_trns_chunk> tRNS =
-          std::make_unique<img_png_trns_chunk>();
+      std::unique_ptr<img_png_trns_chunk> tRNS = std::make_unique<img_png_trns_chunk>();
       tRNS->alpha.reserve(chunk.length);
       for (uint32_t i = 0; i < chunk.length; ++i) {
         tRNS->alpha.emplace_back(chunk_data[i]);
@@ -532,18 +578,16 @@ static bool img_png_read(const std::shared_ptr<img::image_specification>& spec,
     }
 
     if (chunk.type == s_IMG_PNG_GAMA_CHUNK) {
-      std::unique_ptr<img_png_gama_chunk> gAMA =
-          std::make_unique<img_png_gama_chunk>();
+      std::unique_ptr<img_png_gama_chunk> gAMA = std::make_unique<img_png_gama_chunk>();
       temp_gamma_ptr = gAMA.get();  // Store the pointer to gAMA chunk
 
       if (chunk.length != 4) {
         gAMA->has_gamma = false;
-        IMG_DEBUG_LOG("Invalid gAMA chunk length: %x, expected: 4\n",
-                      chunk.length);
+        IMG_DEBUG_LOG("Invalid gAMA chunk length: %x, expected: 4\n", chunk.length);
       } else {
         gAMA->has_gamma = true;
-        gAMA->gamma = (chunk_data[0] << 24) | (chunk_data[1] << 16) |
-                      (chunk_data[2] << 8) | chunk_data[3];
+        gAMA->gamma =
+            (chunk_data[0] << 24) | (chunk_data[1] << 16) | (chunk_data[2] << 8) | chunk_data[3];
 
         gAMA->length = chunk.length;
         gAMA->crc = chunk.crc;
@@ -553,17 +597,19 @@ static bool img_png_read(const std::shared_ptr<img::image_specification>& spec,
         gAMA->iCCP = temp_iccp_ptr;  // Link gAMA to iCCP chunk
         gAMA->sRGB = temp_srgb_ptr;  // Link gAMA to sRGB chunk
       }
+
+      std::shared_ptr<img_png_type_chunk_map> gAMA_map =
+          std::make_shared<img_png_type_chunk_map>(chunk.type, std::move(gAMA));
+      png_chunks.emplace_back(std::move(gAMA_map));
     }
 
     if (chunk.type == s_IMG_PNG_CHRM_CHUNK) {
-      std::unique_ptr<img_png_chrm_chunk> cHRM =
-          std::make_unique<img_png_chrm_chunk>();
+      std::unique_ptr<img_png_chrm_chunk> cHRM = std::make_unique<img_png_chrm_chunk>();
       temp_chrm_ptr = cHRM.get();  // Store the pointer to cHRM chunk
 
       if (chunk.length != 32) {
         cHRM->has_chrm = false;
-        IMG_DEBUG_LOG("Invalid cHRM chunk length: %x, expected: 32\n",
-                      chunk.length);
+        IMG_DEBUG_LOG("Invalid cHRM chunk length: %x, expected: 32\n", chunk.length);
       } else {
         cHRM->has_chrm = true;
         auto read_fixed_point = [&](int offset) {
@@ -588,17 +634,81 @@ static bool img_png_read(const std::shared_ptr<img::image_specification>& spec,
         cHRM->gAMA = temp_gamma_ptr;  // Link cHRM to gAMA chunk
         cHRM->iCCP = temp_iccp_ptr;   // Link cHRM to iCCP chunk
         cHRM->sRGB = temp_srgb_ptr;   // Link cHRM to sRGB chunk
-
-        std::shared_ptr<img_png_type_chunk_map> cHRM_map =
-            std::make_shared<img_png_type_chunk_map>(chunk.type,
-                                                     std::move(cHRM));
-        png_chunks.emplace_back(std::move(cHRM_map));
       }
+
+      std::shared_ptr<img_png_type_chunk_map> cHRM_map =
+          std::make_shared<img_png_type_chunk_map>(chunk.type, std::move(cHRM));
+      png_chunks.emplace_back(std::move(cHRM_map));
+    }
+
+    if (chunk.type == s_IMG_PNG_ICCP_CHUNK) {
+      std::unique_ptr<img_png_iccp_chunk> iccp = std::make_unique<img_png_iccp_chunk>();
+      temp_iccp_ptr = iccp.get();  // Store the pointer to iCCP chunk
+
+      if (chunk.length < 12) {
+        iccp->has_iccp = false;
+        IMG_DEBUG_LOG("Invalid iCCP chunk length: %x, expected: 12 or more\n", chunk.length);
+      } else {
+        iccp->has_iccp = true;
+
+        iccp->length = chunk.length;
+        iccp->crc = chunk.crc;
+        iccp->type = chunk.type;
+
+        iccp->gAMA = temp_gamma_ptr;  // Link iCCP to gAMA chunk
+        iccp->cHRM = temp_chrm_ptr;   // Link iCCP to cHRM chunk
+        iccp->sRGB = temp_srgb_ptr;   // Link iCCP to sRGB chunk
+      }
+
+      std::shared_ptr<img_png_type_chunk_map> iCCP_map =
+          std::make_shared<img_png_type_chunk_map>(chunk.type, std::move(iccp));
+      png_chunks.emplace_back(std::move(iCCP_map));
+    }
+
+    if (chunk.type == s_IMG_PNG_SRGB_CHUNK) {
+      std::unique_ptr<img_png_srgb_chunk> srgb = std::make_unique<img_png_srgb_chunk>();
+      temp_srgb_ptr = srgb.get();  // Store the pointer to sRGB chunk
+
+      if (chunk.length != 1) {
+        srgb->has_srgb = false;
+        IMG_DEBUG_LOG("Invalid sRGB chunk length: %x, expected: 1\n", chunk.length);
+      } else {
+        srgb->has_srgb = true;
+        uint8_t rendering_intent = chunk_data[0];
+        switch (rendering_intent) {
+          case 0:
+            srgb->rendering_intent = img_png_srgb_rendering_intent::perceptual;
+            break;
+          case 1:
+            srgb->rendering_intent = img_png_srgb_rendering_intent::relative_colorimetic;
+            break;
+          case 2:
+            srgb->rendering_intent = img_png_srgb_rendering_intent::saturation;
+            break;
+          case 3:
+            srgb->rendering_intent = img_png_srgb_rendering_intent::absolute_colorimetric;
+            break;
+          default:
+            srgb->rendering_intent = img_png_srgb_rendering_intent::perceptual;
+            break;
+        };
+
+        srgb->length = chunk.length;
+        srgb->crc = chunk.crc;
+        srgb->type = chunk.type;
+
+        srgb->gAMA = temp_gamma_ptr;  // Link sRGB to gAMA chunk
+        srgb->cHRM = temp_chrm_ptr;   // Link sRGB to cHRM chunk
+        srgb->iCCP = temp_iccp_ptr;   // Link sRGB to iCCP chunk
+      }
+
+      std::shared_ptr<img_png_type_chunk_map> srgb_map =
+          std::make_shared<img_png_type_chunk_map>(chunk.type, std::move(srgb));
+      png_chunks.emplace_back(std::move(srgb_map));
     }
 
     if (chunk.type == s_IMG_PNG_IEND_CHUNK) {
-      std::unique_ptr<img_png_iend_chunk> iend =
-          std::make_unique<img_png_iend_chunk>();
+      std::unique_ptr<img_png_iend_chunk> iend = std::make_unique<img_png_iend_chunk>();
       iend->is_iend = true;
 
       iend->length = chunk.length;
@@ -614,12 +724,10 @@ static bool img_png_read(const std::shared_ptr<img::image_specification>& spec,
 }
 
 namespace img {
-std::shared_ptr<image_specification> import(
-    const std::filesystem::path& filepath, image_format format,
-    bool flip) noexcept {
+std::shared_ptr<image_specification> import(const std::filesystem::path& filepath,
+                                            image_format format, bool flip) noexcept {
   if (format == image_format::png) {
-    std::shared_ptr<image_specification> spec =
-        std::make_shared<image_specification>();
+    std::shared_ptr<image_specification> spec = std::make_shared<image_specification>();
 
     spec->filepath = filepath;
     spec->filename = filepath.filename().string();
@@ -627,8 +735,7 @@ std::shared_ptr<image_specification> import(
 
     compressed_file_data file(filepath);
     if (img_png_read(spec, file.data, file.size)) {
-      IMG_DEBUG_LOG("PNG file read successfully: %s\n",
-                    filepath.string().c_str());
+      IMG_DEBUG_LOG("PNG file read successfully: %s\n", filepath.string().c_str());
       return spec;
     } else {
       IMG_DEBUG_LOG("Failed to read PNG file: %s\n", filepath.string().c_str());
