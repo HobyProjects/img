@@ -30,9 +30,7 @@ SOFTWARE.
 
 #ifdef IMG_DEBUG
 #include <stdio.h>
-#define IMG_DEBUG_LOG(...) \
-  printf("[IMG LOG]:> ");  \
-  printf(__VA_ARGS__)
+#define IMG_DEBUG_LOG(...) printf(__VA_ARGS__)
 #else
 #define IMG_DEBUG_LOG(...)
 #endif
