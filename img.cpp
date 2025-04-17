@@ -263,7 +263,7 @@ struct img_png_chunk {
   virtual ~img_png_chunk() = default;
 };
 
-using img_chunk_ptr = std::unique_ptr<img_png_chunk>;  // Pointer to a PNG chunk
+using img_chunk_ptr = std::shared_ptr<img_png_chunk>;  // Pointer to a PNG chunk
 
 /**
  * @struct img_png_type_chunk_map
@@ -314,7 +314,7 @@ struct img_png_iend_chunk : img_png_chunk {
  */
 struct img_png_idat_chunk : img_png_chunk {
   uint8_t* data{nullptr};                  // Pointer to the IDAT chunk data
-  img_png_ihdr_chunck* ihdr_ptr{nullptr};  // Pointer to the IHDR chunk
+  std::weak_ptr<img_png_ihdr_chunck> ihdr;  // Pointer to the IHDR chunk
 
   img_png_idat_chunk() = default;
   virtual ~img_png_idat_chunk() {
@@ -360,9 +360,9 @@ struct img_png_gama_chunk : img_png_chunk {
   uint32_t gamma{0};      // Gamma value for the image
   bool has_gamma{false};  // Flag to indicate if gama chunk is present
 
-  img_png_chrm_chunk* chrm{nullptr};  // Pointer to the chrm chunk (if present)
-  img_png_iccp_chunk* iccp{nullptr};  // Pointer to the iccp chunk (if present)
-  img_png_srgb_chunk* srgb{nullptr};  // Pointer to the srgb chunk (if present)
+  std::weak_ptr<img_png_chrm_chunk> chrm;  // Pointer to the chrm chunk (if present)
+  std::weak_ptr<img_png_iccp_chunk> iccp;  // Pointer to the iccp chunk (if present)
+  std::weak_ptr<img_png_srgb_chunk> srgb;  // Pointer to the srgb chunk (if present)
 
   img_png_gama_chunk() = default;
   virtual ~img_png_gama_chunk() = default;
@@ -380,9 +380,9 @@ struct img_png_chrm_chunk : img_png_chunk {
   float blue_x{0.0f}, blue_y{0.0f};
   bool has_chrm{false};
 
-  img_png_gama_chunk* gama{nullptr};  // Pointer to the gama chunk (if present)
-  img_png_iccp_chunk* iccp{nullptr};  // Pointer to the iccp chunk (if present)
-  img_png_srgb_chunk* srgb{nullptr};  // Pointer to the srgb chunk (if present)
+  std::weak_ptr<img_png_gama_chunk> gama;  // Pointer to the gama chunk (if present)
+  std::weak_ptr<img_png_iccp_chunk> iccp;  // Pointer to the iccp chunk (if present)
+  std::weak_ptr<img_png_srgb_chunk> srgb;  // Pointer to the srgb chunk (if present)
 
   img_png_chrm_chunk() = default;
   virtual ~img_png_chrm_chunk() = default;
@@ -399,9 +399,9 @@ struct img_png_iccp_chunk : img_png_chunk {
   std::vector<uint8_t> compressed_profile;  // Compressed ICC profile data
   bool has_iccp{false};
 
-  img_png_gama_chunk* gama{nullptr};  // Pointer to the gama chunk (if present)
-  img_png_chrm_chunk* chrm{nullptr};  // Pointer to the chrm chunk (if present)
-  img_png_srgb_chunk* srgb{nullptr};  // Pointer to the srgb chunk (if present)
+  std::weak_ptr<img_png_gama_chunk> gama;  // Pointer to the gama chunk (if present)
+  std::weak_ptr<img_png_chrm_chunk> chrm;  // Pointer to the chrm chunk (if present)
+  std::weak_ptr<img_png_srgb_chunk> srgb;  // Pointer to the srgb chunk (if present)
 
   img_png_iccp_chunk() = default;
   virtual ~img_png_iccp_chunk() = default;
@@ -428,9 +428,9 @@ struct img_png_srgb_chunk : img_png_chunk {
   img_png_srgb_rendering_intent rendering_intent{img_png_srgb_rendering_intent::perceptual};
   bool has_srgb{false};
 
-  img_png_gama_chunk* gama{nullptr};  // Pointer to the gama chunk (if present)
-  img_png_iccp_chunk* iccp{nullptr};  // Pointer to the iccp chunk (if present)
-  img_png_chrm_chunk* chrm{nullptr};  // Pointer to the chrm chunk (if present)
+  std::weak_ptr<img_png_gama_chunk> gama;  // Pointer to the gama chunk (if present)
+  std::weak_ptr<img_png_iccp_chunk> iccp;  // Pointer to the iccp chunk (if present)
+  std::weak_ptr<img_png_chrm_chunk> chrm;  // Pointer to the chrm chunk (if present)
 
   img_png_srgb_chunk() = default;
   virtual ~img_png_srgb_chunk() = default;
@@ -447,12 +447,305 @@ struct img_png_bkgd_chunk : img_png_chunk {
   uint8_t palette_index{0};   // For indexed
   uint8_t color_type{255};    // To track what kind of color this represents
 
-  img_png_plte_chunk* plte{nullptr};   // Pointer to the plte chunk (if present)
-  img_png_ihdr_chunck* ihdr{nullptr};  // Pointer to the IHDR chunk
+  img_png_plte_chunk* plte;   // Pointer to the plte chunk (if present)
+  img_png_ihdr_chunck* ihdr;  // Pointer to the IHDR chunk
 
   img_png_bkgd_chunk() = default;
   virtual ~img_png_bkgd_chunk() = default;
 };
+
+/**
+ * @brief Verifies the PNG signature.
+ * @param signature The PNG signature to verify.
+ * @return True if the signature is valid, false otherwise.
+ */
+static bool img_png_verify_signature(uint64_t signature) noexcept {
+  return signature == s_IMG_PNG_SIGNATURE;
+}
+
+/**
+ * @brief Verifies the CRC32 checksum of a PNG chunk.
+ * @details This function calculates the CRC32 checksum for a given PNG chunk
+ * consisting of a type and data, and compares it to the provided CRC value.
+ * It constructs the input for the CRC calculation by concatenating the chunk
+ * type and data, calculates the CRC, and returns the calculated CRC if it matches
+ * the provided CRC, otherwise returns 0.
+ * @param type The type of the PNG chunk.
+ * @param len The length of the chunk data in bytes.
+ * @param crc The CRC value to verify against.
+ * @param data Pointer to the chunk data.
+ * @return The calculated CRC32 value if it matches the provided CRC, 0 otherwise.
+ */
+static uint32_t img_png_verify_chunk_crc(uint32_t type, uint32_t len, uint32_t crc,
+                                         uint8_t* data) noexcept {
+  size_t crc_input_size = 4 + len;
+  uint8_t* crc_input = new uint8_t[crc_input_size];
+
+  // Write type (big endian) first
+  crc_input[0] = (type >> 24) & 0xFF;
+  crc_input[1] = (type >> 16) & 0xFF;
+  crc_input[2] = (type >> 8) & 0xFF;
+  crc_input[3] = type & 0xFF;
+  memcpy(crc_input + 4, data, len);
+
+  // Now calculate CRC over type + data
+  uint32_t calculated_crc = img_png_crc32(crc_input, crc_input_size);
+  delete[] crc_input;
+
+  return (calculated_crc == crc) ? calculated_crc : 0;
+}
+
+/**
+ * @brief Reads the IHDR chunk of a PNG image.
+ * @details This function reads the IHDR chunk of a PNG image and populates an
+ * img_png_ihdr_chunck structure with the information. It verifies the CRC32
+ * checksum of the chunk, and returns a pointer to the structure if the chunk
+ * is read successfully, otherwise returns nullptr.
+ * @param type The type of the PNG chunk.
+ * @param len The length of the chunk data in bytes.
+ * @param data Pointer to the chunk data.
+ * @param crc The CRC value to verify against.
+ * @param chunck_map The vector to store the read chunk.
+ * @return A pointer to the img_png_ihdr_chunck structure if the chunk is
+ * read successfully, otherwise returns nullptr.
+ */
+static std::shared_ptr<img_png_ihdr_chunck>
+img_png_read_ihdr_chunk(uint32_t type, uint32_t len, uint8_t* data, uint32_t crc,
+                        std::vector<std::shared_ptr<img_png_type_chunk_map>>& chunck_map) noexcept {
+  std::shared_ptr<img_png_ihdr_chunck> ihdr = std::make_shared<img_png_ihdr_chunck>();
+
+  ihdr->width = (data[0] << 24) | (data[1] << 16) | (data[2] << 8) | data[3];
+  ihdr->height = (data[4] << 24) | (data[5] << 16) | (data[6] << 8) | data[7];
+  ihdr->bit_depth = data[8];
+  ihdr->color_type = data[9];
+  ihdr->compression_method = data[10];
+  ihdr->filter_method = data[11];
+  ihdr->interlace_method = data[12];
+
+  ihdr->length = len;
+  ihdr->crc = crc;
+  ihdr->type = type;
+
+  std::shared_ptr<img_png_type_chunk_map> ihdr_map =
+      std::make_shared<img_png_type_chunk_map>(type, std::move(ihdr));
+  chunck_map.emplace_back(std::move(ihdr_map));
+
+  IMG_DEBUG_LOG(
+      "IHDR chunk read successfully,\n\t\twidth: %d pxels x height: %d pxels (Total: %d "
+      "pxels)\n\t\tbit_depth: %d\n"
+      "\t\tcolor_type: %d\n\t\tcompression_method: %d\n\t\tfilter_method: %d\n"
+      "\t\tinterlace_method: %d\n",
+      ihdr->width, ihdr->height, ihdr->width * ihdr->height, ihdr->bit_depth, ihdr->color_type,
+      ihdr->compression_method, ihdr->filter_method, ihdr->interlace_method);
+
+  return ihdr;
+}
+
+/**
+ * @brief Reads the IDAT chunk of a PNG image.
+ * @details This function reads the IDAT chunk of a PNG image and populates an
+ * img_png_idat_chunk structure with the information. It verifies the CRC32
+ * checksum of the chunk, and returns a pointer to the structure if the chunk
+ * is read successfully, otherwise returns nullptr.
+ * @param type The type of the PNG chunk.
+ * @param len The length of the chunk data in bytes.
+ * @param data Pointer to the chunk data.
+ * @param crc The CRC value to verify against.
+ * @param chunck_map The vector to store the read chunk.
+ * @return A pointer to the img_png_idat_chunk structure if the chunk is
+ * read successfully, otherwise returns nullptr.
+ */
+static std::shared_ptr<img_png_idat_chunk>
+img_png_read_idat_chunk(uint32_t type, uint32_t len, uint8_t* data, uint32_t crc,
+                        std::vector<std::shared_ptr<img_png_type_chunk_map>>& chunck_map) noexcept {
+  std::shared_ptr<img_png_idat_chunk> idat = std::make_shared<img_png_idat_chunk>();
+  idat->length = len;
+  idat->data = data;
+
+  idat->crc = crc;
+  idat->type = type;
+  idat->length = len;
+
+  std::shared_ptr<img_png_type_chunk_map> idat_map =
+      std::make_shared<img_png_type_chunk_map>(type, std::move(idat));
+  chunck_map.emplace_back(std::move(idat_map));
+
+  IMG_DEBUG_LOG("IDAT chunk read successfully\n,\t\tlength: %d\n", len);
+  return idat;
+}
+
+/**
+ * @brief Reads the PLTE chunk of a PNG image.
+ * @details This function reads the PLTE chunk of a PNG image and populates an
+ * img_png_plte_chunk structure with the information. It verifies the CRC32
+ * checksum of the chunk, and returns a pointer to the structure if the chunk
+ * is read successfully, otherwise returns nullptr.
+ * @param type The type of the PNG chunk.
+ * @param len The length of the chunk data in bytes.
+ * @param data Pointer to the chunk data.
+ * @param crc The CRC value to verify against.
+ * @param chunck_map The vector to store the read chunk.
+ * @return A pointer to the img_png_plte_chunk structure if the chunk is
+ * read successfully, otherwise returns nullptr.
+ */
+static std::shared_ptr<img_png_plte_chunk>
+img_png_read_plte_chunck(uint32_t type, uint32_t len, uint8_t* data, uint32_t crc,
+                         std::vector<std::shared_ptr<img_png_type_chunk_map>>& chunk_map) noexcept {
+  std::shared_ptr<img_png_plte_chunk> plte = std::make_shared<img_png_plte_chunk>();
+  plte->palette.reserve(len / 3);
+  for (uint32_t i = 0; i < len; i += 3) {
+    plte->palette.emplace_back(img_rgb(data[i], data[i + 1], data[i + 2]));
+  }
+
+  plte->length = len;
+  plte->crc = crc;
+  plte->type = type;
+
+  std::shared_ptr<img_png_type_chunk_map> plte_map =
+      std::make_shared<img_png_type_chunk_map>(type, std::move(plte));
+  chunk_map.emplace_back(std::move(plte_map));
+
+  IMG_DEBUG_LOG("PLTE chunk read successfully\n,\t\tlength: %d\n", len);
+  return plte;
+}
+
+/**
+ * @brief Reads the tRNS chunk of a PNG image.
+ * @details This function reads the tRNS chunk of a PNG image and populates an
+ * img_png_trns_chunk structure with the information. It verifies the CRC32
+ * checksum of the chunk, and returns a pointer to the structure if the chunk
+ * is read successfully, otherwise returns nullptr.
+ * @param type The type of the PNG chunk.
+ * @param len The length of the chunk data in bytes.
+ * @param data Pointer to the chunk data.
+ * @param crc The CRC value to verify against.
+ * @param chunck_map The vector to store the read chunk.
+ * @return A pointer to the img_png_trns_chunk structure if the chunk is
+ * read successfully, otherwise returns nullptr.
+ */
+static std::shared_ptr<img_png_trns_chunk>
+img_png_read_trns_chunk(uint32_t type, uint32_t len, uint8_t* data, uint32_t crc,
+                        std::vector<std::shared_ptr<img_png_type_chunk_map>>& chunk_map) noexcept {
+  std::shared_ptr<img_png_trns_chunk> tRNS = std::make_shared<img_png_trns_chunk>();
+  tRNS->alpha.reserve(len);
+  for (uint32_t i = 0; i < len; ++i) {
+    tRNS->alpha.emplace_back(data[i]);
+  }
+
+  tRNS->length = len;
+  tRNS->crc = crc;
+  tRNS->type = type;
+
+  std::shared_ptr<img_png_type_chunk_map> tRNS_map =
+      std::make_shared<img_png_type_chunk_map>(type, std::move(tRNS));
+  chunk_map.emplace_back(std::move(tRNS_map));
+
+  IMG_DEBUG_LOG("TRNS chunk read successfully\n,\t\tlength: %d\n", len);
+  return tRNS;
+}
+
+/**
+ * @brief Reads the gAMA chunk of a PNG image.
+ * @details This function reads the gAMA chunk of a PNG image and populates an
+ * img_png_gama_chunk structure with the information. It verifies the CRC32
+ * checksum of the chunk, and returns a pointer to the structure if the chunk
+ * is read successfully, otherwise returns nullptr.
+ * @param type The type of the PNG chunk.
+ * @param len The length of the chunk data in bytes.
+ * @param data Pointer to the chunk data.
+ * @param crc The CRC value to verify against.
+ * @param chunck_map The vector to store the read chunk.
+ * @return A pointer to the img_png_gama_chunk structure if the chunk is
+ * read successfully, otherwise returns nullptr.
+ */
+static std::shared_ptr<img_png_gama_chunk>
+img_png_read_gama_chunk(uint32_t type, uint32_t len, uint8_t* data, uint32_t crc,
+                        std::vector<std::shared_ptr<img_png_type_chunk_map>>& chunk_map) noexcept {
+  std::shared_ptr<img_png_gama_chunk> gama = std::make_shared<img_png_gama_chunk>();
+
+  if (len != 4 || len != 6) {
+    gama->has_gamma = false;
+    IMG_DEBUG_LOG("Invalid gama chunk length: %x, expected: 4 or 6\n", len);
+    return nullptr;
+  } else {
+    gama->has_gamma = true;
+    gama->gamma = (data[0] << 24) | (data[1] << 16) | (data[2] << 8) | data[3];
+
+    gama->length = len;
+    gama->crc = crc;
+    gama->type = type;
+  }
+
+  std::shared_ptr<img_png_type_chunk_map> gama_map =
+      std::make_shared<img_png_type_chunk_map>(type, std::move(gama));
+  chunk_map.emplace_back(std::move(gama_map));
+
+  IMG_DEBUG_LOG(
+      "GAMA chunk read successfully\n,\t\tlength: %d\n\t\thas gamma: %s\n\t\tgamma level: %f\n",
+      len, gama->has_gamma ? "true" : "false", (gama->has_gamma) ? gama->gamma / 100000.0f : 0.0f);
+
+  return gama;
+}
+
+/**
+ * @brief Reads the cHRM chunk of a PNG image.
+ * @details This function reads the cHRM chunk of a PNG image and populates an
+ * img_png_chrm_chunk structure with the chromaticity values for the image.
+ * It verifies the CRC32 checksum of the chunk, checks the length, and returns
+ * a pointer to the structure if the chunk is read successfully, otherwise
+ * returns nullptr. The function logs the chromaticity values if successful.
+ * @param type The type of the PNG chunk.
+ * @param len The length of the chunk data in bytes.
+ * @param data Pointer to the chunk data.
+ * @param crc The CRC value to verify against.
+ * @param chunk_map The vector to store the read chunk.
+ * @return A pointer to the img_png_chrm_chunk structure if the chunk is
+ * read successfully, otherwise returns nullptr.
+ */
+
+static std::shared_ptr<img_png_chrm_chunk>
+img_png_read_chrm_chunk(uint32_t type, uint32_t len, uint8_t* data, uint32_t crc,
+                        std::vector<std::shared_ptr<img_png_type_chunk_map>>& chunk_map) noexcept {
+  std::unique_ptr<img_png_chrm_chunk> chrm = std::make_unique<img_png_chrm_chunk>();
+
+  if (len != 32) {
+    chrm->has_chrm = false;
+    IMG_DEBUG_LOG("Invalid chrm chunk length: %x, expected: 32\n", len);
+    return nullptr;
+  } else {
+    chrm->has_chrm = true;
+    auto read_fixed_point = [&](int offset) {
+      return ((data[offset] << 24) | (data[offset + 1] << 16) |
+              (data[offset + 2] << 8) | data[offset + 3]) /
+              100000.0f;
+    };
+
+    chrm->white_x = read_fixed_point(0);
+    chrm->white_y = read_fixed_point(4);
+    chrm->red_x = read_fixed_point(8);
+    chrm->red_y = read_fixed_point(12);
+    chrm->green_x = read_fixed_point(16);
+    chrm->green_y = read_fixed_point(20);
+    chrm->blue_x = read_fixed_point(24);
+    chrm->blue_y = read_fixed_point(28);
+
+    chrm->length = len;
+    chrm->crc = crc;
+    chrm->type = type;
+  }
+
+  std::shared_ptr<img_png_type_chunk_map> chrm_map =
+      std::make_shared<img_png_type_chunk_map>(type, std::move(chrm));
+  chunk_map.emplace_back(std::move(chrm_map));
+
+  IMG_DEBUG_LOG(
+      "CHRM chunk read successfully\n,\t\tlength: %d\n\t\thas chrm: %s\n\t\twhite point: (%f, "
+      "%f)\n\t\tred point: (%f, %f)\n\t\tgreen point: (%f, %f)\n\t\tblue point: (%f, %f)\n",
+      len, chrm->has_chrm ? "true" : "false", chrm->white_x, chrm->white_y,
+      chrm->red_x, chrm->red_y, chrm->green_x, chrm->green_y, chrm->blue_x, chrm->blue_y);
+
+  return chrm;
+}
 
 /**
  * @brief Reads a PNG file and extracts its chunks.
@@ -468,7 +761,7 @@ static bool img_png_read(const std::shared_ptr<img::image_specification>& spec, 
                          size_t size) noexcept {
   bit_reader bit(data, size);                 // Create a bit bit for the data
   uint64_t signature = bit.read<uint64_t>();  // Read the PNG signature
-  if (signature != s_IMG_PNG_SIGNATURE) {
+  if (!img_png_verify_signature(signature)) {
     IMG_DEBUG_LOG("Invalid PNG signature: %llx, File:%s is not a PNG file\n", signature,
                   spec->filename.c_str());
     return false;
@@ -480,12 +773,12 @@ static bool img_png_read(const std::shared_ptr<img::image_specification>& spec, 
                  img_png_generate_crc_table);                       // Generate the CRC table
   std::vector<std::shared_ptr<img_png_type_chunk_map>> png_chunks;  // Vector to hold PNG chunks
 
-  img_png_ihdr_chunck* temp_ihdr_ptr = nullptr;  // Pointer to IHDR chunk
-  img_png_gama_chunk* temp_gamma_ptr = nullptr;  // Pointer to gama chunk
-  img_png_chrm_chunk* temp_chrm_ptr = nullptr;   // Pointer to chrm chunk
-  img_png_iccp_chunk* temp_iccp_ptr = nullptr;   // Pointer to iccp chunk
-  img_png_srgb_chunk* temp_srgb_ptr = nullptr;   // Pointer to srgb chunk
-  img_png_plte_chunk* temp_plte_ptr = nullptr;   // Pointer to plte chunk
+  std::weak_ptr<img_png_ihdr_chunck> temp_ihdr_ptr;  // Pointer to IHDR chunk
+  std::weak_ptr<img_png_gama_chunk> temp_gamma_ptr;  // Pointer to gama chunk
+  std::weak_ptr<img_png_chrm_chunk> temp_chrm_ptr;   // Pointer to chrm chunk
+  std::weak_ptr<img_png_iccp_chunk> temp_iccp_ptr;   // Pointer to iccp chunk
+  std::weak_ptr<img_png_srgb_chunk> temp_srgb_ptr;   // Pointer to srgb chunk
+  std::weak_ptr<img_png_plte_chunk> temp_plte_ptr;   // Pointer to plte chunk
 
   bool is_file_read_successful = false;
 
@@ -506,196 +799,101 @@ static bool img_png_read(const std::shared_ptr<img::image_specification>& spec, 
     }
 
     chunk.crc = bit.read<uint32_t>();  // Read the CRC value for the chunk
-    size_t crc_input_size = 4 + chunk.length;
-    uint8_t* crc_input = new uint8_t[crc_input_size];
-
-    // Write type (big endian) first
-    crc_input[0] = (chunk.type >> 24) & 0xFF;
-    crc_input[1] = (chunk.type >> 16) & 0xFF;
-    crc_input[2] = (chunk.type >> 8) & 0xFF;
-    crc_input[3] = chunk.type & 0xFF;
-    memcpy(crc_input + 4, chunk_data, chunk.length);
-
-    // Now calculate CRC over type + data
-    uint32_t crc = img_png_crc32(crc_input, crc_input_size);
-    delete[] crc_input;
-
-    if (crc != chunk.crc) {
+    uint32_t crc = img_png_verify_chunk_crc(chunk.type, chunk.length, chunk.crc, chunk_data);
+    if (crc) {
       IMG_DEBUG_LOG("Invalid CRC for chunk type: %x, expected: %x\n", chunk.type, crc);
       delete[] chunk_data;  // Free the chunk data
       break;
     }
 
+    IMG_DEBUG_LOG("=====================================================================================\n");
     IMG_DEBUG_LOG("Reading chunk, \n\t\ttype: %x\n\t\tlength: %x\n\t\tcrc: %x\n", chunk.type,
                   chunk.length, chunk.crc);
 
+    ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
     if (chunk.type == s_IMG_PNG_IHDR_CHUNK) {
-      std::unique_ptr<img_png_ihdr_chunck> ihdr = std::make_unique<img_png_ihdr_chunck>();
-      temp_ihdr_ptr = ihdr.get();
-
-      ihdr->width =
-          (chunk_data[0] << 24) | (chunk_data[1] << 16) | (chunk_data[2] << 8) | chunk_data[3];
-      ihdr->height =
-          (chunk_data[4] << 24) | (chunk_data[5] << 16) | (chunk_data[6] << 8) | chunk_data[7];
-      ihdr->bit_depth = chunk_data[8];
-      ihdr->color_type = chunk_data[9];
-      ihdr->compression_method = chunk_data[10];
-      ihdr->filter_method = chunk_data[11];
-      ihdr->interlace_method = chunk_data[12];
-
-      ihdr->length = chunk.length;
-      ihdr->crc = chunk.crc;
-      ihdr->type = chunk.type;
-
-      std::shared_ptr<img_png_type_chunk_map> ihdr_map =
-          std::make_shared<img_png_type_chunk_map>(chunk.type, std::move(ihdr));
-      png_chunks.emplace_back(std::move(ihdr_map));
-
-      IMG_DEBUG_LOG(
-          "IHDR chunk read successfully,\n\t\twidth: %d pxels x height: %d pxels (Total: %d "
-          "pxels)\n\t\tbit_depth: %d\n"
-          "\t\tcolor_type: %d\n\t\tcompression_method: %d\n\t\tfilter_method: %d\n"
-          "\t\tinterlace_method: %d\n",
-          ihdr->width, ihdr->height, ihdr->width * ihdr->height, ihdr->bit_depth, ihdr->color_type,
-          ihdr->compression_method, ihdr->filter_method, ihdr->interlace_method);
+      temp_ihdr_ptr =
+          img_png_read_ihdr_chunk(chunk.type, chunk.length, chunk_data, chunk.crc, png_chunks);
+      IMG_DEBUG_LOG("Critical error, png chunck point location undefined -> %x",
+                    s_IMG_PNG_IHDR_CHUNK);
+      continue;
     }
+
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
     if (chunk.type == s_IMG_PNG_IDAT_CHUNK) {
-      std::unique_ptr<img_png_idat_chunk> idat = std::make_unique<img_png_idat_chunk>();
-      idat->ihdr_ptr = temp_ihdr_ptr;
+      std::weak_ptr<img_png_idat_chunk> idat =
+          img_png_read_idat_chunk(chunk.type, chunk.length, chunk_data, chunk.crc, png_chunks);
+      if (!idat.expired() && !temp_ihdr_ptr.expired()) {
+        std::shared_ptr<img_png_idat_chunk> idat_ptr = idat.lock();
+        idat_ptr->ihdr = temp_ihdr_ptr.lock();
+      } else {
+        IMG_DEBUG_LOG("Critical error, png chunck point location undefined -> %x and %x",
+                      s_IMG_PNG_IHDR_CHUNK, s_IMG_PNG_IDAT_CHUNK);
+        delete[] chunk_data;
+      }
 
-      idat->length = chunk.length;
-      idat->data = chunk_data;
-
-      idat->crc = chunk.crc;
-      idat->type = chunk.type;
-      idat->length = chunk.length;
-
-      std::shared_ptr<img_png_type_chunk_map> idat_map =
-          std::make_shared<img_png_type_chunk_map>(chunk.type, std::move(idat));
-      png_chunks.emplace_back(std::move(idat_map));
-
-      IMG_DEBUG_LOG("IDAT chunk read successfully\n,\t\tlength: %d\n", chunk.length);
+      continue;
     }
+
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
     if (chunk.type == s_IMG_PNG_PLTE_CHUNK) {
-      std::unique_ptr<img_png_plte_chunk> plte = std::make_unique<img_png_plte_chunk>();
-      temp_plte_ptr = plte.get();
-
-      plte->palette.reserve(chunk.length / 3);
-      for (uint32_t i = 0; i < chunk.length; i += 3) {
-        plte->palette.emplace_back(img_rgb(chunk_data[i], chunk_data[i + 1], chunk_data[i + 2]));
+      temp_plte_ptr =
+          img_png_read_plte_chunck(chunk.type, chunk.length, chunk_data, chunk.crc, png_chunks);
+      if (temp_plte_ptr.expired()) {
+        IMG_DEBUG_LOG("Critical error, png chunck point location undefined -> %x",
+                      s_IMG_PNG_PLTE_CHUNK);
+        delete[] chunk_data;
       }
 
-      plte->length = chunk.length;
-      plte->crc = chunk.crc;
-      plte->type = chunk.type;
-
-      std::shared_ptr<img_png_type_chunk_map> plte_map =
-          std::make_shared<img_png_type_chunk_map>(chunk.type, std::move(plte));
-      png_chunks.emplace_back(std::move(plte_map));
-
-      IMG_DEBUG_LOG("PLTE chunk read successfully\n,\t\tlength: %d\n", chunk.length);
+      continue;
     }
 
-    if (chunk.type == s_IMG_PNG_TRNS_CHUNK) {
-      std::unique_ptr<img_png_trns_chunk> tRNS = std::make_unique<img_png_trns_chunk>();
-      tRNS->alpha.reserve(chunk.length);
-      for (uint32_t i = 0; i < chunk.length; ++i) {
-        tRNS->alpha.emplace_back(chunk_data[i]);
-      }
-
-      tRNS->length = chunk.length;
-      tRNS->crc = chunk.crc;
-      tRNS->type = chunk.type;
-
-      std::shared_ptr<img_png_type_chunk_map> tRNS_map =
-          std::make_shared<img_png_type_chunk_map>(chunk.type, std::move(tRNS));
-      png_chunks.emplace_back(std::move(tRNS_map));
-
-      IMG_DEBUG_LOG("TRNS chunk read successfully\n,\t\tlength: %d\n", chunk.length);
-    }
+    //////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
     if (chunk.type == s_IMG_PNG_GAMA_CHUNK) {
-      std::unique_ptr<img_png_gama_chunk> gama = std::make_unique<img_png_gama_chunk>();
-      temp_gamma_ptr = gama.get();  // Store the pointer to gama chunk
-
-      if (chunk.length != 4) {
-        gama->has_gamma = false;
-        IMG_DEBUG_LOG("Invalid gama chunk length: %x, expected: 4\n", chunk.length);
-        delete[] chunk_data;
-        break;
-
+      temp_gamma_ptr =
+          img_png_read_gama_chunk(chunk.type, chunk.length, chunk_data, chunk.crc, png_chunks);
+      if (!temp_gamma_ptr.expired()) {
+        std::shared_ptr<img_png_gama_chunk> gama_ptr = temp_gamma_ptr.lock();
+        if (gama_ptr->has_gamma) {
+          gama_ptr->chrm = temp_chrm_ptr.lock();
+          gama_ptr->iccp = temp_iccp_ptr.lock();
+          gama_ptr->srgb = temp_srgb_ptr.lock();
+        }
       } else {
-        gama->has_gamma = true;
-        gama->gamma =
-            (chunk_data[0] << 24) | (chunk_data[1] << 16) | (chunk_data[2] << 8) | chunk_data[3];
-
-        gama->length = chunk.length;
-        gama->crc = chunk.crc;
-        gama->type = chunk.type;
-
-        gama->chrm = temp_chrm_ptr;  // Link gama to chrm chunk
-        gama->iccp = temp_iccp_ptr;  // Link gama to iccp chunk
-        gama->srgb = temp_srgb_ptr;  // Link gama to srgb chunk
+        IMG_DEBUG_LOG("Critical error, png chunck point location undefined -> %x",
+                      s_IMG_PNG_GAMA_CHUNK);
+        delete[] chunk_data;
       }
 
-      std::shared_ptr<img_png_type_chunk_map> gama_map =
-          std::make_shared<img_png_type_chunk_map>(chunk.type, std::move(gama));
-      png_chunks.emplace_back(std::move(gama_map));
-
-      IMG_DEBUG_LOG(
-          "GAMA chunk read successfully\n,\t\tlength: %d\n\t\thas gamma: %s\n\t\tgamma level: %f\n",
-          chunk.length, gama->has_gamma ? "true" : "false",
-          (gama->has_gamma) ? gama->gamma / 100000.0f : 0.0f);
+      continue;
     }
+
+    /////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
     if (chunk.type == s_IMG_PNG_CHRM_CHUNK) {
-      std::unique_ptr<img_png_chrm_chunk> chrm = std::make_unique<img_png_chrm_chunk>();
-      temp_chrm_ptr = chrm.get();  // Store the pointer to chrm chunk
-
-      if (chunk.length != 32) {
-        chrm->has_chrm = false;
-        IMG_DEBUG_LOG("Invalid chrm chunk length: %x, expected: 32\n", chunk.length);
+      temp_chrm_ptr = img_png_read_chrm_chunk(chunk.type, chunk.length, chunk_data, chunk.crc, png_chunks);
+      if(!temp_chrm_ptr.expired()){
+        std::shared_ptr<img_png_chrm_chunk> chrm_ptr = temp_chrm_ptr.lock();
+        if(chrm_ptr->has_chrm){
+          chrm_ptr->gama = temp_gamma_ptr.lock();
+          chrm_ptr->iccp = temp_iccp_ptr.lock();
+          chrm_ptr->srgb = temp_srgb_ptr.lock();
+        }
+      }
+      else{
+        IMG_DEBUG_LOG("Critical error, png chunck point location undefined -> %x",
+                      s_IMG_PNG_CHRM_CHUNK);
         delete[] chunk_data;
-        break;
-
-      } else {
-        chrm->has_chrm = true;
-        auto read_fixed_point = [&](int offset) {
-          return ((chunk_data[offset] << 24) | (chunk_data[offset + 1] << 16) |
-                  (chunk_data[offset + 2] << 8) | chunk_data[offset + 3]) /
-                 100000.0f;
-        };
-
-        chrm->white_x = read_fixed_point(0);
-        chrm->white_y = read_fixed_point(4);
-        chrm->red_x = read_fixed_point(8);
-        chrm->red_y = read_fixed_point(12);
-        chrm->green_x = read_fixed_point(16);
-        chrm->green_y = read_fixed_point(20);
-        chrm->blue_x = read_fixed_point(24);
-        chrm->blue_y = read_fixed_point(28);
-
-        chrm->length = chunk.length;
-        chrm->crc = chunk.crc;
-        chrm->type = chunk.type;
-
-        chrm->gama = temp_gamma_ptr;  // Link chrm to gama chunk
-        chrm->iccp = temp_iccp_ptr;   // Link chrm to iccp chunk
-        chrm->srgb = temp_srgb_ptr;   // Link chrm to srgb chunk
       }
 
-      std::shared_ptr<img_png_type_chunk_map> chrm_map =
-          std::make_shared<img_png_type_chunk_map>(chunk.type, std::move(chrm));
-      png_chunks.emplace_back(std::move(chrm_map));
-
-      IMG_DEBUG_LOG(
-          "CHRM chunk read successfully\n,\t\tlength: %d\n\t\thas chrm: %s\n\t\twhite point: (%f, "
-          "%f)\n\t\tred point: (%f, %f)\n\t\tgreen point: (%f, %f)\n\t\tblue point: (%f, %f)\n",
-          chunk.length, chrm->has_chrm ? "true" : "false", chrm->white_x, chrm->white_y,
-          chrm->red_x, chrm->red_y, chrm->green_x, chrm->green_y, chrm->blue_x, chrm->blue_y);
+      continue;
     }
+
+    /////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
     if (chunk.type == s_IMG_PNG_ICCP_CHUNK) {
       std::unique_ptr<img_png_iccp_chunk> iccp = std::make_unique<img_png_iccp_chunk>();
@@ -874,7 +1072,6 @@ static bool img_png_read(const std::shared_ptr<img::image_specification>& spec, 
   }
 
   if (!is_file_read_successful) {
-    IMG_DEBUG_LOG("Failed to read PNG file: %s\n", spec->filename.c_str());
     return false;
   }
 }

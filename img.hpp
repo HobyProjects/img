@@ -31,8 +31,10 @@ SOFTWARE.
 #ifdef IMG_DEBUG
 #include <stdio.h>
 #define IMG_DEBUG_LOG(...) printf(__VA_ARGS__)
+#define IMG_ASSERT(exp, ...) if(!(exp)) { printf(__VA_ARGS__); std::terminate(); }
 #else
 #define IMG_DEBUG_LOG(...)
+#define IMG_ASSERT(exp, ...)
 #endif
 
 namespace img {
