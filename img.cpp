@@ -487,10 +487,16 @@ struct img_png_phys_chunk : img_png_chunk {
  */
 struct img_png_itxt_chunk : img_png_chunk {
   std::string keyword;
-  bool is_compressed{false};  ///< Whether the text is compressed
+  uint8_t compression_flag{0};
+  uint8_t compression_method{0};
   std::string language_tag;
   std::string translated_keyword;
-  std::string text;
+  std::string text;                   // Uncompressed
+  std::vector<uint8_t> compressed_text; // Store raw compressed for now
+  bool is_compressed{false};
+
+  img_png_itxt_chunk() = default;
+  virtual ~img_png_itxt_chunk() = default;
 };
 
 /******************************************************************
@@ -1008,6 +1014,82 @@ img_png_read_phys_chunk(uint32_t type, uint32_t len, uint8_t* data, uint32_t crc
 }
 
 /**
+ * @brief Reads the iTXt chunk of a PNG image.
+ * @details This function reads the iTXt chunk of a PNG image and populates an
+ * img_png_itxt_chunk structure with the keyword, compression flag, compression
+ * method, language tag, translated keyword, and text. It verifies the length of
+ * the chunk and the CRC32 checksum, and returns a pointer to the structure if
+ * the chunk is read successfully, otherwise returns nullptr. The function logs
+ * the keyword, compression flag, compression method, language tag, translated
+ * keyword, and text and any errors encountered during processing.
+ * @param type The type of the PNG chunk.
+ * @param len The length of the chunk data in bytes.
+ * @param data Pointer to the chunk data.
+ * @param crc The CRC value to verify against.
+ * @return A pointer to the img_png_itxt_chunk structure if the chunk is
+ * read successfully, otherwise returns nullptr.
+ */
+static std::shared_ptr<img_png_itxt_chunk>
+img_png_read_itxt_chunk(uint32_t type, uint32_t len, uint8_t* data, uint32_t crc) noexcept {
+  std::shared_ptr<img_png_itxt_chunk> itxt = std::make_shared<img_png_itxt_chunk>();
+  itxt->length = len;
+    itxt->type = type;
+    itxt->crc = crc;
+
+    size_t offset = 0;
+
+    // Read keyword (null-terminated)
+    while (offset < len && data[offset] != '\0') {
+        itxt->keyword += static_cast<char>(data[offset++]);
+    }
+    offset++; // skip null terminator
+
+    if (offset >= len) return itxt;
+
+    // Compression flag
+    itxt->compression_flag = data[offset++];
+
+    // Compression method
+    itxt->compression_method = data[offset++];
+
+    // Read language tag (null-terminated)
+    while (offset < len && data[offset] != '\0') {
+        itxt->language_tag += static_cast<char>(data[offset++]);
+    }
+    offset++; // skip null terminator
+
+    // Read translated keyword (null-terminated UTF-8)
+    while (offset < len && data[offset] != '\0') {
+        itxt->translated_keyword += static_cast<char>(data[offset++]);
+    }
+    offset++; // skip null terminator
+
+    // Remaining is the actual text
+    size_t remaining = len - offset;
+
+    if (itxt->compression_flag == 1 && itxt->compression_method == 0) {
+        // It's compressed using zlib
+        itxt->is_compressed = true;
+        itxt->compressed_text.assign(data + offset, data + offset + remaining);
+    } else {
+        // It's just plain UTF-8 text
+        itxt->is_compressed = false;
+        itxt->text.assign(reinterpret_cast<const char*>(data + offset), remaining);
+    }
+
+    IMG_DEBUG_LOG("ITXT CHUNCK ------------------------------------------------- \n");
+    IMG_DEBUG_LOG("LENGTH = %d BYTES\n", itxt->length);
+    IMG_DEBUG_LOG("KEYWORD = %s\n", itxt->keyword.c_str());
+    IMG_DEBUG_LOG("COMPRESSION FLAG = %d\n", itxt->compression_flag);
+    IMG_DEBUG_LOG("COMPRESSION METHOD = %d\n", itxt->compression_method);
+    IMG_DEBUG_LOG("LANGUAGE TAG = %s\n", itxt->language_tag.c_str());
+    IMG_DEBUG_LOG("TRANSLATED KEYWORD = %s\n", itxt->translated_keyword.c_str());
+    IMG_DEBUG_LOG("TEXT = %s\n", itxt->text.c_str());
+
+    return itxt;
+}
+
+/**
  * @brief Map of PNG chunks.
  * @details This map stores the PNG chunks, with the chunk type as the key and
  * a pointer to the chunk data as the value. The map is populated by the
@@ -1259,6 +1341,19 @@ static bool img_png_read(const std::shared_ptr<img::image_specification>& spec, 
         std::shared_ptr<img_png_type_chunk_map> phys_map = std::make_shared<img_png_type_chunk_map>(
             spec->xid, s_IMG_PNG_PHYS_CHUNK, std::move(phys_ptr));
         s_PNG_CHUNKS_MAP[spec->xid] = phys_map;
+      }
+
+      DELETE_AND_CONTINUE(chunk_data);
+    }
+
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+    if(chunk.type == s_IMG_PNG_ITXT_CHUNK){
+      std::weak_ptr<img_png_itxt_chunk> temp_itxt_ptr = img_png_read_itxt_chunk(chunk.type, chunk.length, chunk_data, chunk.crc);
+      if(!temp_itxt_ptr.expired()){
+        std::shared_ptr<img_png_itxt_chunk> itxt_ptr = temp_itxt_ptr.lock();
+        std::shared_ptr<img_png_type_chunk_map> itxt_map = std::make_shared<img_png_type_chunk_map>(spec->xid, s_IMG_PNG_ITXT_CHUNK, std::move(itxt_ptr));
+        s_PNG_CHUNKS_MAP[spec->xid] = itxt_map;
       }
 
       DELETE_AND_CONTINUE(chunk_data);
