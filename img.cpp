@@ -491,8 +491,8 @@ struct img_png_itxt_chunk : img_png_chunk {
   uint8_t compression_method{0};
   std::string language_tag;
   std::string translated_keyword;
-  std::string text;                   // Uncompressed
-  std::vector<uint8_t> compressed_text; // Store raw compressed for now
+  std::string text;                      // Uncompressed
+  std::vector<uint8_t> compressed_text;  // Store raw compressed for now
   bool is_compressed{false};
 
   img_png_itxt_chunk() = default;
@@ -1033,60 +1033,51 @@ static std::shared_ptr<img_png_itxt_chunk>
 img_png_read_itxt_chunk(uint32_t type, uint32_t len, uint8_t* data, uint32_t crc) noexcept {
   std::shared_ptr<img_png_itxt_chunk> itxt = std::make_shared<img_png_itxt_chunk>();
   itxt->length = len;
-    itxt->type = type;
-    itxt->crc = crc;
+  itxt->type = type;
+  itxt->crc = crc;
 
-    size_t offset = 0;
+  size_t offset = 0;
+  while (offset < len && data[offset] != '\0') {
+    itxt->keyword += static_cast<char>(data[offset++]);
+  }
+  offset++;
 
-    // Read keyword (null-terminated)
-    while (offset < len && data[offset] != '\0') {
-        itxt->keyword += static_cast<char>(data[offset++]);
-    }
-    offset++; // skip null terminator
-
-    if (offset >= len) return itxt;
-
-    // Compression flag
-    itxt->compression_flag = data[offset++];
-
-    // Compression method
-    itxt->compression_method = data[offset++];
-
-    // Read language tag (null-terminated)
-    while (offset < len && data[offset] != '\0') {
-        itxt->language_tag += static_cast<char>(data[offset++]);
-    }
-    offset++; // skip null terminator
-
-    // Read translated keyword (null-terminated UTF-8)
-    while (offset < len && data[offset] != '\0') {
-        itxt->translated_keyword += static_cast<char>(data[offset++]);
-    }
-    offset++; // skip null terminator
-
-    // Remaining is the actual text
-    size_t remaining = len - offset;
-
-    if (itxt->compression_flag == 1 && itxt->compression_method == 0) {
-        // It's compressed using zlib
-        itxt->is_compressed = true;
-        itxt->compressed_text.assign(data + offset, data + offset + remaining);
-    } else {
-        // It's just plain UTF-8 text
-        itxt->is_compressed = false;
-        itxt->text.assign(reinterpret_cast<const char*>(data + offset), remaining);
-    }
-
-    IMG_DEBUG_LOG("ITXT CHUNCK ------------------------------------------------- \n");
-    IMG_DEBUG_LOG("LENGTH = %d BYTES\n", itxt->length);
-    IMG_DEBUG_LOG("KEYWORD = %s\n", itxt->keyword.c_str());
-    IMG_DEBUG_LOG("COMPRESSION FLAG = %d\n", itxt->compression_flag);
-    IMG_DEBUG_LOG("COMPRESSION METHOD = %d\n", itxt->compression_method);
-    IMG_DEBUG_LOG("LANGUAGE TAG = %s\n", itxt->language_tag.c_str());
-    IMG_DEBUG_LOG("TRANSLATED KEYWORD = %s\n", itxt->translated_keyword.c_str());
-    IMG_DEBUG_LOG("TEXT = %s\n", itxt->text.c_str());
-
+  if (offset >= len)
     return itxt;
+  itxt->compression_flag = data[offset++];
+  itxt->compression_method = data[offset++];
+
+  while (offset < len && data[offset] != '\0') {
+    itxt->language_tag += static_cast<char>(data[offset++]);
+  }
+  offset++;
+
+  while (offset < len && data[offset] != '\0') {
+    itxt->translated_keyword += static_cast<char>(data[offset++]);
+  }
+  offset++;
+
+  size_t remaining = len - offset;
+  if (itxt->compression_flag == 1 && itxt->compression_method == 0) {
+    // It's compressed using zlib
+    itxt->is_compressed = true;
+    itxt->compressed_text.assign(data + offset, data + offset + remaining);
+  } else {
+    // It's just plain UTF-8 text
+    itxt->is_compressed = false;
+    itxt->text.assign(reinterpret_cast<const char*>(data + offset), remaining);
+  }
+
+  IMG_DEBUG_LOG("ITXT CHUNCK ------------------------------------------------- \n");
+  IMG_DEBUG_LOG("LENGTH = %d BYTES\n", itxt->length);
+  IMG_DEBUG_LOG("KEYWORD = %s\n", itxt->keyword.c_str());
+  IMG_DEBUG_LOG("COMPRESSION FLAG = %d\n", itxt->compression_flag);
+  IMG_DEBUG_LOG("COMPRESSION METHOD = %d\n", itxt->compression_method);
+  IMG_DEBUG_LOG("LANGUAGE TAG = %s\n", itxt->language_tag.c_str());
+  IMG_DEBUG_LOG("TRANSLATED KEYWORD = %s\n", itxt->translated_keyword.c_str());
+  IMG_DEBUG_LOG("TEXT = %s\n", itxt->text.c_str());
+
+  return itxt;
 }
 
 /**
@@ -1112,8 +1103,8 @@ static std::unordered_map<uint32_t, std::shared_ptr<img_png_type_chunk_map>> s_P
  * @param size Size of the PNG file data in bytes.
  * @return True if the PNG file was read successfully, false otherwise.
  */
-static bool img_png_read(const std::shared_ptr<img::image_specification>& spec, uint8_t* data,
-                         size_t size) noexcept {
+static bool img_png_read(const std::shared_ptr<img::specification>& spec, img::mode mode,
+                         uint8_t* data, size_t size) noexcept {
   bit_reader bit(data, size);                 // Create a bit bit for the data
   uint64_t signature = bit.read<uint64_t>();  // Read the PNG signature
   if (!img_png_verify_signature(signature)) {
@@ -1162,7 +1153,7 @@ static bool img_png_read(const std::shared_ptr<img::image_specification>& spec, 
     chunk.crc = bit.read<uint32_t>();  // Read the CRC value for the chunk
     uint32_t crc = img_png_verify_chunk_crc(chunk.type, chunk.length, chunk.crc, chunk_data);
     if (crc) {
-      IMG_DEBUG_LOG("INVALID CRC VALUE FOR CHUNK: %x, EXPECTED: %x\n", chunk.type, crc);
+      IMG_DEBUG_LOG("INVALID CRC VALUE FOR CHUNK: %x, EXPECTED: %x\n", chunk.type, chunk.crc);
       delete[] chunk_data;  // Free the chunk data
       break;
     }
@@ -1177,14 +1168,12 @@ static bool img_png_read(const std::shared_ptr<img::image_specification>& spec, 
 
     if (chunk.type == s_IMG_PNG_IHDR_CHUNK) {
       temp_ihdr_ptr = img_png_read_ihdr_chunk(chunk.type, chunk.length, chunk_data, chunk.crc);
-
-      if (!temp_ihdr_ptr.expired()) {
-        std::shared_ptr<img_png_ihdr_chunck> ihdr_ptr = temp_ihdr_ptr.lock();
+      if (std::shared_ptr<img_png_ihdr_chunck> ihdr_ptr = temp_ihdr_ptr.lock()) {
         std::shared_ptr<img_png_type_chunk_map> ihdr_map = std::make_shared<img_png_type_chunk_map>(
             spec->xid, s_IMG_PNG_IHDR_CHUNK, std::move(ihdr_ptr));
         s_PNG_CHUNKS_MAP[spec->xid] = ihdr_map;
       } else {
-        IMG_DEBUG_LOG("CRITICAL CHUNCK %x WAS NOT PROPERLY READ\n", s_IMG_PNG_IHDR_CHUNK);
+        IMG_DEBUG_LOG("CRITICAL CHUNCK : %x WAS NOT PROPERLY READ\n", s_IMG_PNG_IHDR_CHUNK);
         break;
       }
 
@@ -1196,9 +1185,7 @@ static bool img_png_read(const std::shared_ptr<img::image_specification>& spec, 
     if (chunk.type == s_IMG_PNG_IDAT_CHUNK) {
       std::weak_ptr<img_png_idat_chunk> temp_idat_ptr =
           img_png_read_idat_chunk(chunk.type, chunk.length, chunk_data, chunk.crc);
-
-      if (!temp_idat_ptr.expired()) {
-        std::shared_ptr<img_png_idat_chunk> idat_ptr = temp_idat_ptr.lock();
+      if (std::shared_ptr<img_png_idat_chunk> idat_ptr = temp_idat_ptr.lock()) {
         std::shared_ptr<img_png_type_chunk_map> idat_map = std::make_shared<img_png_type_chunk_map>(
             spec->xid, s_IMG_PNG_IDAT_CHUNK, std::move(idat_ptr));
         s_PNG_CHUNKS_MAP[spec->xid] = idat_map;
@@ -1212,11 +1199,10 @@ static bool img_png_read(const std::shared_ptr<img::image_specification>& spec, 
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-    if (chunk.type == s_IMG_PNG_PLTE_CHUNK) {
+    if (chunk.type == s_IMG_PNG_PLTE_CHUNK &&
+        (mode == img::mode::nessessary || mode == img::mode::fullbreakdown)) {
       temp_plte_ptr = img_png_read_plte_chunck(chunk.type, chunk.length, chunk_data, chunk.crc);
-
-      if (!temp_plte_ptr.expired()) {
-        std::shared_ptr<img_png_plte_chunk> plte_ptr = temp_plte_ptr.lock();
+      if (std::shared_ptr<img_png_plte_chunk> plte_ptr = temp_plte_ptr.lock()) {
         std::shared_ptr<img_png_type_chunk_map> plte_map = std::make_shared<img_png_type_chunk_map>(
             spec->xid, s_IMG_PNG_PLTE_CHUNK, std::move(plte_ptr));
         s_PNG_CHUNKS_MAP[spec->xid] = plte_map;
@@ -1225,18 +1211,32 @@ static bool img_png_read(const std::shared_ptr<img::image_specification>& spec, 
       DELETE_AND_CONTINUE(chunk_data);
     }
 
+    ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+    if (chunk.type == s_IMG_PNG_TRNS_CHUNK &&
+        (mode == img::mode::nessessary || mode == img::mode::fullbreakdown)) {
+      std::weak_ptr<img_png_trns_chunk> temp_trns_ptr =
+          img_png_read_trns_chunk(chunk.type, chunk.length, chunk_data, chunk.crc);
+      if (std::shared_ptr<img_png_trns_chunk> trns_ptr = temp_trns_ptr.lock()) {
+        std::shared_ptr<img_png_type_chunk_map> trns_map = std::make_shared<img_png_type_chunk_map>(
+            spec->xid, s_IMG_PNG_TRNS_CHUNK, std::move(trns_ptr));
+        s_PNG_CHUNKS_MAP[spec->xid] = trns_map;
+      }
+
+      DELETE_AND_CONTINUE(chunk_data);
+    }
+
     //////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-    if (chunk.type == s_IMG_PNG_GAMA_CHUNK) {
+    if (chunk.type == s_IMG_PNG_GAMA_CHUNK &&
+        (mode == img::mode::nessessary || mode == img::mode::fullbreakdown)) {
       temp_gamma_ptr = img_png_read_gama_chunk(chunk.type, chunk.length, chunk_data, chunk.crc);
-      if (!temp_gamma_ptr.expired()) {
-        std::shared_ptr<img_png_gama_chunk> gama_ptr = temp_gamma_ptr.lock();
+      if (std::shared_ptr<img_png_gama_chunk> gama_ptr = temp_gamma_ptr.lock()) {
         if (gama_ptr->has_gamma) {
           gama_ptr->chrm = temp_chrm_ptr.lock();
           gama_ptr->iccp = temp_iccp_ptr.lock();
           gama_ptr->srgb = temp_srgb_ptr.lock();
         }
-
         std::shared_ptr<img_png_type_chunk_map> gama_map = std::make_shared<img_png_type_chunk_map>(
             spec->xid, s_IMG_PNG_GAMA_CHUNK, std::move(gama_ptr));
         s_PNG_CHUNKS_MAP[spec->xid] = gama_map;
@@ -1247,7 +1247,8 @@ static bool img_png_read(const std::shared_ptr<img::image_specification>& spec, 
 
     /////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-    if (chunk.type == s_IMG_PNG_CHRM_CHUNK) {
+    if (chunk.type == s_IMG_PNG_CHRM_CHUNK &&
+        (mode == img::mode::nessessary || mode == img::mode::fullbreakdown)) {
       temp_chrm_ptr = img_png_read_chrm_chunk(chunk.type, chunk.length, chunk_data, chunk.crc);
       if (!temp_chrm_ptr.expired()) {
         std::shared_ptr<img_png_chrm_chunk> chrm_ptr = temp_chrm_ptr.lock();
@@ -1267,10 +1268,10 @@ static bool img_png_read(const std::shared_ptr<img::image_specification>& spec, 
 
     /////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-    if (chunk.type == s_IMG_PNG_ICCP_CHUNK) {
+    if (chunk.type == s_IMG_PNG_ICCP_CHUNK &&
+        (mode == img::mode::nessessary || mode == img::mode::fullbreakdown)) {
       temp_iccp_ptr = img_png_read_iccp_chunk(chunk.type, chunk.length, chunk_data, chunk.crc);
-      if (!temp_iccp_ptr.expired()) {
-        std::shared_ptr<img_png_iccp_chunk> iccp_ptr = temp_iccp_ptr.lock();
+      if (std::shared_ptr<img_png_iccp_chunk> iccp_ptr = temp_iccp_ptr.lock()) {
         if (iccp_ptr->has_iccp) {
           iccp_ptr->gama = temp_gamma_ptr.lock();
           iccp_ptr->chrm = temp_chrm_ptr.lock();
@@ -1287,10 +1288,10 @@ static bool img_png_read(const std::shared_ptr<img::image_specification>& spec, 
 
     /////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-    if (chunk.type == s_IMG_PNG_SRGB_CHUNK) {
+    if (chunk.type == s_IMG_PNG_SRGB_CHUNK &&
+        (mode == img::mode::nessessary || mode == img::mode::fullbreakdown)) {
       temp_srgb_ptr = img_png_read_srgb_chunk(chunk.type, chunk.length, chunk_data, chunk.crc);
-      if (!temp_srgb_ptr.expired()) {
-        std::shared_ptr<img_png_srgb_chunk> srgb_ptr = temp_srgb_ptr.lock();
+      if (std::shared_ptr<img_png_srgb_chunk> srgb_ptr = temp_srgb_ptr.lock()) {
         if (srgb_ptr->has_srgb) {
           srgb_ptr->gama = temp_gamma_ptr.lock();
           srgb_ptr->chrm = temp_chrm_ptr.lock();
@@ -1307,14 +1308,14 @@ static bool img_png_read(const std::shared_ptr<img::image_specification>& spec, 
 
     /////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-    if (chunk.type == s_IMG_PNG_BKGD_CHUNK) {
+    if (chunk.type == s_IMG_PNG_BKGD_CHUNK &&
+        (mode == img::mode::nessessary || mode == img::mode::fullbreakdown)) {
       if (!temp_ihdr_ptr.expired() && !temp_plte_ptr.expired()) {
         std::weak_ptr<img_png_bkgd_chunk> temp_bkgd_ptr =
             img_png_read_bkgd_chunk(chunk.type, chunk.length, chunk_data, chunk.crc,
                                     temp_ihdr_ptr.lock(), temp_plte_ptr.lock());
 
-        if (!temp_bkgd_ptr.expired()) {
-          std::shared_ptr<img_png_bkgd_chunk> bkgd_ptr = temp_bkgd_ptr.lock();
+        if ( std::shared_ptr<img_png_bkgd_chunk> bkgd_ptr = temp_bkgd_ptr.lock()) {
           std::shared_ptr<img_png_type_chunk_map> bkgd_map =
               std::make_shared<img_png_type_chunk_map>(spec->xid, s_IMG_PNG_BKGD_CHUNK,
                                                        std::move(bkgd_ptr));
@@ -1332,12 +1333,11 @@ static bool img_png_read(const std::shared_ptr<img::image_specification>& spec, 
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-    if (chunk.type == s_IMG_PNG_PHYS_CHUNK) {
+    if (chunk.type == s_IMG_PNG_PHYS_CHUNK && mode == img::mode::fullbreakdown) {
       temp_phys_ptr =
           img_png_read_phys_chunk(chunk.type, chunk.length, chunk_data, chunk.crc,
                                   temp_ihdr_ptr.lock(), temp_pcal_ptr.lock(), temp_scal_ptr.lock());
-      if (!temp_phys_ptr.expired()) {
-        std::shared_ptr<img_png_phys_chunk> phys_ptr = temp_phys_ptr.lock();
+      if ( std::shared_ptr<img_png_phys_chunk> phys_ptr = temp_phys_ptr.lock()) {
         std::shared_ptr<img_png_type_chunk_map> phys_map = std::make_shared<img_png_type_chunk_map>(
             spec->xid, s_IMG_PNG_PHYS_CHUNK, std::move(phys_ptr));
         s_PNG_CHUNKS_MAP[spec->xid] = phys_map;
@@ -1348,11 +1348,12 @@ static bool img_png_read(const std::shared_ptr<img::image_specification>& spec, 
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-    if(chunk.type == s_IMG_PNG_ITXT_CHUNK){
-      std::weak_ptr<img_png_itxt_chunk> temp_itxt_ptr = img_png_read_itxt_chunk(chunk.type, chunk.length, chunk_data, chunk.crc);
-      if(!temp_itxt_ptr.expired()){
-        std::shared_ptr<img_png_itxt_chunk> itxt_ptr = temp_itxt_ptr.lock();
-        std::shared_ptr<img_png_type_chunk_map> itxt_map = std::make_shared<img_png_type_chunk_map>(spec->xid, s_IMG_PNG_ITXT_CHUNK, std::move(itxt_ptr));
+    if (chunk.type == s_IMG_PNG_ITXT_CHUNK && mode == img::mode::fullbreakdown) {
+      std::weak_ptr<img_png_itxt_chunk> temp_itxt_ptr =
+          img_png_read_itxt_chunk(chunk.type, chunk.length, chunk_data, chunk.crc);
+      if (     std::shared_ptr<img_png_itxt_chunk> itxt_ptr = temp_itxt_ptr.lock()) {
+        std::shared_ptr<img_png_type_chunk_map> itxt_map = std::make_shared<img_png_type_chunk_map>(
+            spec->xid, s_IMG_PNG_ITXT_CHUNK, std::move(itxt_ptr));
         s_PNG_CHUNKS_MAP[spec->xid] = itxt_map;
       }
 
@@ -1380,17 +1381,17 @@ static bool img_png_read(const std::shared_ptr<img::image_specification>& spec, 
 }
 
 namespace img {
-std::shared_ptr<image_specification> import(const std::filesystem::path& filepath,
-                                            image_format format, bool flip) noexcept {
-  if (format == image_format::png) {
-    std::shared_ptr<image_specification> spec = std::make_shared<image_specification>();
+std::shared_ptr<specification> import(const std::filesystem::path& filepath, format format,
+                                      mode mode, bool flip) noexcept {
+  if (format == format::png) {
+    std::shared_ptr<specification> spec = std::make_shared<specification>();
 
     spec->filepath = filepath;
     spec->filename = filepath.filename().string();
     spec->xid = unique_xid();
 
     compressed_file_data file(filepath);
-    if (img_png_read(spec, file.data, file.size)) {
+    if (img_png_read(spec, mode, file.data, file.size)) {
       IMG_DEBUG_LOG("PNG file read successfully: %s\n", filepath.string().c_str());
       return spec;
     } else {

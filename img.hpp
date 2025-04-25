@@ -31,7 +31,11 @@ SOFTWARE.
 #ifdef IMG_DEBUG
 #include <stdio.h>
 #define IMG_DEBUG_LOG(...) printf(__VA_ARGS__)
-#define IMG_ASSERT(exp, ...) if(!(exp)) { printf(__VA_ARGS__); std::terminate(); }
+#define IMG_ASSERT(exp, ...) \
+  if (!(exp)) {              \
+    printf(__VA_ARGS__);     \
+    std::terminate();        \
+  }
 #else
 #define IMG_DEBUG_LOG(...)
 #define IMG_ASSERT(exp, ...)
@@ -43,7 +47,7 @@ namespace img {
  * @struct image_specification
  * @brief This structure defines the specifications of an image.
  */
-struct image_specification {
+struct specification {
   int32_t width{0};        ///< Width of the image in pixels.
   int32_t height{0};       ///< Height of the image in pixels.
   int32_t channels{0};     ///< Number of color channels in the image.
@@ -55,10 +59,10 @@ struct image_specification {
 };
 
 /**
- * @enum image_format
+ * @enum format
  * @brief Enum class representing different image formats.
  */
-enum class image_format {
+enum class format {
   png,   ///< Portable Network Graphics format.
   jpeg,  ///< Joint Photographic Experts Group format.
   bmp,   ///< Bitmap format.
@@ -67,12 +71,24 @@ enum class image_format {
 };
 
 /**
- * @brief Loads an image from the given filepath.
- * @param filepath Filepath of the image to be loaded.
- * @param flip Whether to flip the image vertically after loading (default is
- * true).
- * @return A std::shared_ptr to the loaded image.
+ * @enum mode
+ * @brief Enum class representing the image read modes.
+ * read_nessessary: Only reads the necessary chunks for the image.
+ * read_all: Reads all chunks in the image.
  */
-[[nodiscard]] std::shared_ptr<image_specification>
-import(const std::filesystem::path& filepath, image_format format, bool flip = true) noexcept;
+enum class mode { nessessary, fullbreakdown };
+
+/**
+ * @brief Import an image from the given filepath with the specified format and read mode.
+ *
+ * @param filepath The filepath of the image to import.
+ * @param format The image format of the file to import.
+ * @param mode The image read mode.
+ * @param flip Whether to flip the image vertically. Default is true.
+ * @return A shared pointer to the image specification if the import is successful, otherwise
+ * nullptr.
+ * @throws std::runtime_error if the image could not be imported.
+ */
+[[nodiscard]] std::shared_ptr<specification>
+import(const std::filesystem::path& filepath, format format, mode mode, bool flip = true) noexcept;
 }  // namespace img
